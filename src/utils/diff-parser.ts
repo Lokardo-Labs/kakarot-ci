@@ -132,8 +132,8 @@ export function parsePullRequestFiles(files: PullRequestFile[]): FileDiff[] {
   const diffs: FileDiff[] = [];
   
   for (const file of files) {
-    // Filter TypeScript files
-    if (!file.filename.match(/\.(ts|tsx)$/)) {
+    // Filter TypeScript and JavaScript files
+    if (!file.filename.match(/\.(ts|tsx|js|jsx)$/)) {
       continue;
     }
     
