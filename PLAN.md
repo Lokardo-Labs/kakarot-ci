@@ -1,11 +1,11 @@
 # Kakarot CI — Product Description & Development Plan
 
 ## Overview
-Kakarot CI is an AI-powered continuous integration tool that automatically generates, runs, and commits high-quality unit tests for code changes in pull requests. It runs entirely inside CI (GitHub Actions), requires no backend server, and integrates into any TypeScript project using a lightweight config file—similar to tools like semantic-release, danger.js, and commitlint.
+Kakarot CI is an AI-powered continuous integration tool that automatically generates, runs, and commits high-quality unit tests for code changes in pull requests. It runs entirely inside CI (GitHub Actions), requires no backend server, and integrates into any TypeScript or JavaScript project using a lightweight config file—similar to tools like semantic-release, danger.js, and commitlint.
 Kakarot CI eliminates the burden of writing and maintaining unit tests while ensuring that new or modified code is always accompanied by relevant, passing test coverage.
 
 ## Product Description
-Kakarot CI analyzes the diff of a pull request, identifies changed TypeScript functions, and uses LLMs to generate unit tests (Jest or Vitest) targeted at those changes. It then executes those tests inside the project's existing CI environment.
+Kakarot CI analyzes the diff of a pull request, identifies changed TypeScript/JavaScript functions, and uses LLMs to generate unit tests (Jest or Vitest) targeted at those changes. It then executes those tests inside the project's existing CI environment.
 If generated tests pass:
 - Kakarot CI commits them to the PR branch
 - Adds a PR comment summarizing what was added
@@ -110,7 +110,7 @@ Reads the PR diff to identify exactly which functions changed and extract releva
 **Tasks**
 - [ ] Parse unified diff hunks
 - [ ] Convert hunks to changed line ranges
-- [ ] Filter .ts / .tsx files
+- [ ] Filter .ts / .tsx / .js / .jsx files
 - [ ] Fetch file contents
 - [ ] Use TypeScript compiler API to:
   - [ ] Parse file AST

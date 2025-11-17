@@ -211,13 +211,21 @@ async function detectTestFile(
   testDirectory: string
 ): Promise<string | undefined> {
   const dir = filePath.substring(0, filePath.lastIndexOf('/'));
-  const baseName = filePath.substring(filePath.lastIndexOf('/') + 1).replace(/\.(ts|tsx)$/, '');
-  const ext = filePath.endsWith('.tsx') ? 'tsx' : 'ts';
+  const baseName = filePath.substring(filePath.lastIndexOf('/') + 1).replace(/\.(ts|tsx|js|jsx)$/, '');
   
-  // Test file patterns to check (avoid redundancy - check .test.tsx and .spec.tsx only if source is .tsx)
-  const testPatterns = ext === 'tsx' 
-    ? [`.test.tsx`, `.spec.tsx`, `.test.ts`, `.spec.ts`]
-    : [`.test.ts`, `.spec.ts`];
+  // Determine file extension and corresponding test patterns
+  let ext: 'ts' | 'tsx' | 'js' | 'jsx';
+  if (filePath.endsWith('.tsx')) ext = 'tsx';
+  else if (filePath.endsWith('.jsx')) ext = 'jsx';
+  else if (filePath.endsWith('.ts')) ext = 'ts';
+  else ext = 'js';
+  
+  // Test file patterns to check (match source file type)
+  const testPatterns = 
+    ext === 'tsx' ? [`.test.tsx`, `.spec.tsx`, `.test.ts`, `.spec.ts`] :
+    ext === 'jsx' ? [`.test.jsx`, `.spec.jsx`, `.test.js`, `.spec.js`] :
+    ext === 'ts' ? [`.test.ts`, `.spec.ts`] :
+    [`.test.js`, `.spec.js`];
   
   // Locations to check (in order of preference, deduplicated)
   const locations = [
