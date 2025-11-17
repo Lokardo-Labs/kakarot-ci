@@ -57,6 +57,13 @@ export interface CommitFile {
   content?: string;
 }
 
+export interface BatchCommitOptions {
+  files: Array<{ path: string; content: string; sha?: string }>;
+  message: string;
+  branch: string;
+  baseSha: string;
+}
+
 export interface GitHubClientOptions {
   token: string;
   owner: string;

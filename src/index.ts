@@ -23,6 +23,18 @@ export type {
   PullRequestFile,
   FileContents,
   CommitFile,
+  BatchCommitOptions,
   GitHubClientOptions,
 } from './types/github.js';
+
+// Diff analysis and AST extraction
+export { parsePullRequestFiles, getChangedRanges } from './utils/diff-parser.js';
+export { analyzeFile } from './utils/ast-analyzer.js';
+export { extractTestTargets } from './utils/test-target-extractor.js';
+export type {
+  DiffHunk,
+  FileDiff,
+  ChangedRange,
+  TestTarget,
+} from './types/diff.js';
 

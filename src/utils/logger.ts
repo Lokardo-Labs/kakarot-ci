@@ -2,19 +2,10 @@ import type { KakarotConfig } from '../types/config.js';
 
 let debugMode = false;
 let jsonMode = false;
-let isPremium = false;
 
-export function initLogger(config: Pick<KakarotConfig, 'debug' | 'kakarotApiKey'>): void {
+export function initLogger(config: Pick<KakarotConfig, 'debug'>): void {
   debugMode = config.debug ?? process.env.KAKAROT_DEBUG === 'true';
-  // TODO: This is a temporary solution to check if the user is premium. We need to implement a proper premium check.
-  isPremium = !!config.kakarotApiKey;
-  
-  if (isPremium) {
-    jsonMode = process.env.KAKAROT_OUTPUT === 'json';
-  } else if ( process.env.KAKAROT_OUTPUT === 'json') {
-    error('JSON mode is only available for premium users');
-    process.exit(1);
-  }
+  jsonMode = process.env.KAKAROT_OUTPUT === 'json';
 }
 
 

@@ -104,6 +104,25 @@ function loadPackageJsonConfig(root: string): PartialKakarotConfig | null {
 }
 
 /**
+ * Merge environment variables with loaded config
+ */
+function mergeEnvConfig(config: PartialKakarotConfig): PartialKakarotConfig {
+  const merged = { ...config };
+
+  // Load apiKey from environment if not in config
+  if (!merged.apiKey && process.env.KAKAROT_API_KEY) {
+    merged.apiKey = process.env.KAKAROT_API_KEY;
+  }
+
+  // Load githubToken from environment if not in config
+  if (!merged.githubToken && process.env.GITHUB_TOKEN) {
+    merged.githubToken = process.env.GITHUB_TOKEN;
+  }
+
+  return merged;
+}
+
+/**
  * Load and validate Kakarot configuration
  */
 export async function loadConfig(): Promise<KakarotConfig> {
@@ -112,24 +131,34 @@ export async function loadConfig(): Promise<KakarotConfig> {
 
   config = await loadTypeScriptConfig(projectRoot);
   if (config) {
-    return KakarotConfigSchema.parse(config);
+    return KakarotConfigSchema.parse(mergeEnvConfig(config));
   }
 
   config = await loadJavaScriptConfig(projectRoot);
   if (config) {
-    return KakarotConfigSchema.parse(config);
+    return KakarotConfigSchema.parse(mergeEnvConfig(config));
   }
 
   config = loadJsonConfig(projectRoot);
   if (config) {
-    return KakarotConfigSchema.parse(config);
+    return KakarotConfigSchema.parse(mergeEnvConfig(config));
   }
 
   config = loadPackageJsonConfig(projectRoot);
   if (config) {
-    return KakarotConfigSchema.parse(config);
+    return KakarotConfigSchema.parse(mergeEnvConfig(config));
   }
 
-  // No config found, return defaults
-  return KakarotConfigSchema.parse({});
+  // No config found, try to load from environment only
+  const envConfig = mergeEnvConfig({});
+  try {
+    return KakarotConfigSchema.parse(envConfig);
+  } catch (err) {
+    error(
+      'Missing required apiKey. Provide it via:\n' +
+      '  - Config file (kakarot.config.ts, .kakarot-ci.config.js/json, or package.json)\n' +
+      '  - Environment variable: KAKAROT_API_KEY'
+    );
+    throw err;
+  }
 }

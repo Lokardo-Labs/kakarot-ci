@@ -5,13 +5,13 @@ Kakarot CI is an AI-powered continuous integration tool that automatically gener
 Kakarot CI eliminates the burden of writing and maintaining unit tests while ensuring that new or modified code is always accompanied by relevant, passing test coverage.
 
 ## Product Description
-Kakarot CI analyzes the diff of a pull request, identifies changed TypeScript functions, and uses LLMs to generate Jest unit tests targeted at those changes. It then executes those tests inside the project's existing CI environment.
+Kakarot CI analyzes the diff of a pull request, identifies changed TypeScript functions, and uses LLMs to generate unit tests (Jest or Vitest) targeted at those changes. It then executes those tests inside the project's existing CI environment.
 If generated tests pass:
 - Kakarot CI commits them to the PR branch
 - Adds a PR comment summarizing what was added
 
 If tests fail:
-- Kakarot attempts up to N fix iterations using a premium model
+- Kakarot attempts up to N fix iterations
 - If still failing, Kakarot posts the tests as a suggested snippet instead of committing
 
 Kakarot CI runs as:
@@ -28,13 +28,11 @@ All test execution happens inside the user's own CI runner — no external code 
 - Automatically generate unit tests for code changes in PRs.
 - Increase test coverage during normal development without adding friction.
 - Improve developer velocity by eliminating repetitive test writing.
-- Ensure reliability via AST-aware analysis, Jest execution, and fix loops.
+- Ensure reliability via AST-aware analysis, test execution (Jest/Vitest), and fix loops.
 - Provide a fast, zero-config onboarding experience.
 
 ### Business Goals
-- Achieve early profitability through a simple, low-maintenance SaaS model.
-- Provide a compelling free tier that encourages usage.
-- Gate premium LLM features behind paid keys.
+- Provide a simple, low-maintenance tool that integrates seamlessly into developer workflows.
 - Expand naturally into future offerings (dashboard, insights, enterprise features).
 
 ## High-Level Architecture
@@ -51,17 +49,16 @@ GitHub Action → CLI → Core Engine
     → GitHub API (fetch diffs)
     → AST Analysis
     → LLM (test generation)
-    → Jest Execution
+    → Test Execution (Jest/Vitest)
     → Commit Results
     → PR Comment Summary
 ```
 
 ### Components
-- **Core Engine**: business logic, AST, diff parsing, LLM prompts, Jest execution.
+- **Core Engine**: business logic, AST, diff parsing, LLM prompts, test execution (Jest/Vitest).
 - **CLI**: orchestrates single PR runs.
 - **GitHub Action**: wraps CLI for easy installation.
 - **Config File**: controls behavior and model usage.
-- **Paid Tier Logic**: premium features unlocked via environment key.
 
 ## Development Plan (Epics)
 
@@ -125,45 +122,68 @@ Reads the PR diff to identify exactly which functions changed and extract releva
 
 ### Epic 5 — LLM Test Generation Engine
 **Description**
-Generate Jest unit tests using LLMs through structured prompts and strict output parsing.
+Generate unit tests (Jest or Vitest) using LLMs through structured prompts and strict output parsing.
 
 **Tasks**
-- [ ] OpenAI wrapper for cheap/premium models
+- [ ] LLM provider wrapper (OpenAI, Anthropic, Google)
 - [ ] Build test generation prompts
 - [ ] Parse LLM output
-- [ ] Validate Jest suite structure
+- [ ] Validate test suite structure (Jest/Vitest)
 - [ ] Implement fix-loop prompt builder
 
-### Epic 6 — Jest Execution & Fix Loop
+### Epic 6 — Test Execution & Fix Loop
 **Description**
-Executes generated tests inside CI and retries failures using premium model refinements.
+Executes generated tests inside CI and retries failures using model refinements. Supports both Jest and Vitest.
 
 **Tasks**
+- [ ] Detect test framework (Jest/Vitest) from package.json
 - [ ] Detect package manager
 - [ ] Write generated tests to disk
-- [ ] Run Jest programmatically with JSON output
-- [ ] Parse results
+- [ ] Run tests programmatically with JSON output:
+  - [ ] Jest runner with JSON reporter
+  - [ ] Vitest runner with JSON reporter
+- [ ] Parse results (unified format)
 - [ ] For failures:
   - [ ] Build failure prompt
   - [ ] Generate fixes
   - [ ] Rewrite test
-  - [ ] Re-run Jest
+  - [ ] Re-run tests
 - [ ] Track success/failure across all targets
+
+### Epic 6.5 — Coverage Collection & LLM-Generated Reports
+**Description**
+Collect test coverage data and use LLMs to generate human-readable coverage reports and summaries.
+
+**Tasks**
+- [ ] Run tests with coverage enabled (Jest/Vitest)
+- [ ] Parse coverage reports (JSON format)
+- [ ] Extract coverage metrics:
+  - [ ] Line coverage
+  - [ ] Branch coverage
+  - [ ] Function coverage
+  - [ ] Statement coverage
+- [ ] Calculate coverage deltas (before/after)
+- [ ] Build LLM prompt with:
+  - [ ] Coverage metrics
+  - [ ] Test results
+  - [ ] Functions tested
+  - [ ] Coverage changes
+- [ ] Generate human-readable summary via LLM
+- [ ] Format summary as PR comment (markdown)
+- [ ] Include coverage badges/visualizations if applicable
 
 ### Epic 7 — GitOps: Auto-Commit & PR Comments
 **Description**
-Commits passing tests to the PR branch and posts a human-readable summary comment.
+Commits passing tests to the PR branch and posts LLM-generated coverage summaries.
 
 **Tasks**
 - [ ] Apply test files to repo
-- [ ] Commit changes using GitHub API
-- [ ] Push into PR branch
-- [ ] Build PR comment summary:
-  - [ ] functions tested
-  - [ ] tests added
-  - [ ] fix attempts
-  - [ ] failures (if any)
-- [ ] Post PR comment
+- [ ] Commit changes using GitHub API (batch commit)
+- [ ] Support commit strategies:
+  - [ ] Direct commit to PR branch
+  - [ ] Create branch + PR for suggested changes
+- [ ] Integrate with Epic 6.5 for coverage summary
+- [ ] Post PR comment with LLM-generated summary
 
 ### Epic 8 — GitHub Action Wrapper
 **Description**
@@ -171,23 +191,12 @@ Creates a turnkey installation flow for users via GitHub Actions.
 
 **Tasks**
 - [ ] Create action.yml
-- [ ] Provide openai_api_key input
+- [ ] Provide api_key input (user-supplied LLM API key)
 - [ ] Wrap CLI in GitHub Action runtime
 - [ ] Publish action
 - [ ] Add example workflow YAML
 
-### Epic 9 — Billing & Paid Tier
-**Description**
-Allows monetization from v1 with minimal infrastructure.
-
-**Tasks**
-- [ ] Add KAKAROT_API_KEY environment variable
-- [ ] Gate premium LLM features behind key
-- [ ] Limit retries and test count in free tier
-- [ ] Track usage locally (printed in CI logs)
-- [ ] Optional: minimal API for key validation
-
-### Epic 10 — Documentation & Developer Experience
+### Epic 9 — Documentation & Developer Experience
 **Description**
 Make onboarding, debugging, and usage intuitive.
 
@@ -198,13 +207,12 @@ Make onboarding, debugging, and usage intuitive.
 - [ ] Debug mode (KAKAROT_DEBUG=1)
 - [ ] Clean, semantic-release–style log formatting
 
-### Epic 11 — Launch & Marketing
+### Epic 10 — Launch & Marketing
 **Description**
 Finalize assets for public release and team adoption.
 
 **Tasks**
 - [ ] Landing page section (kakarot.io)
-- [ ] Pricing page
 - [ ] Quick-start guide
 - [ ] Example repo demonstrating usage
 - [ ] Publish NPM package
@@ -215,10 +223,11 @@ Finalize assets for public release and team adoption.
 - **Week 1** — Core package, config, CLI foundation
 - **Week 2** — GitHub integration (PR metadata, diffs)
 - **Week 3** — AST extraction & diff mapping
-- **Week 4** — LLM test generation (cheap model)
-- **Week 5** — Jest execution & fix loop
+- **Week 4** — LLM test generation
+- **Week 5** — Test execution & fix loop (Jest/Vitest)
+- **Week 5.5** — Coverage collection & LLM reports
 - **Week 6** — Auto-commit, PR comments, GitHub Action
-- **Week 7** — Billing integration, docs, launch prep
+- **Week 7** — Docs, launch prep
 
 ## Note
 This repository contains the **core package** (@kakarot-ci/core) only. Other components (CLI, GitHub Action) will be in separate repositories.
