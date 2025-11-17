@@ -1,0 +1,297 @@
+import * as ts from 'typescript';
+import type { ChangedRange, TestTarget } from '../types/diff.js';
+import { debug } from './logger.js';
+
+interface FunctionNode {
+  name: string;
+  type: 'function' | 'method' | 'arrow-function' | 'class-method';
+  start: number;
+  end: number;
+  node: ts.Node;
+}
+
+/**
+ * Extract functions/methods from TypeScript source code
+ */
+function extractFunctions(sourceFile: ts.SourceFile): FunctionNode[] {
+  const functions: FunctionNode[] = [];
+  
+  function visit(node: ts.Node) {
+    // Function declarations (including export default)
+    if (ts.isFunctionDeclaration(node)) {
+      // Check if it's exported (export function foo() {} or export default function foo() {})
+      const isExported = node.modifiers?.some(m => 
+        m.kind === ts.SyntaxKind.ExportKeyword || m.kind === ts.SyntaxKind.DefaultKeyword
+      );
+      
+      if (node.name) {
+        functions.push({
+          name: node.name.text,
+          type: 'function',
+          start: node.getStart(sourceFile),
+          end: node.getEnd(),
+          node,
+        });
+      } else if (isExported) {
+        // Anonymous export default function: export default function () {}
+        functions.push({
+          name: 'default',
+          type: 'function',
+          start: node.getStart(sourceFile),
+          end: node.getEnd(),
+          node,
+        });
+      }
+    }
+    
+    // Export default with function expressions: export default (function foo() {})
+    // Note: FunctionDeclarations with export default are handled above via modifiers
+    if (ts.isExportAssignment(node) && node.isExportEquals === false && ts.isFunctionExpression(node.expression)) {
+      const func = node.expression;
+      const name = func.name ? func.name.text : 'default';
+      functions.push({
+        name,
+        type: 'function',
+        start: node.getStart(sourceFile),
+        end: node.getEnd(),
+        node,
+      });
+    }
+    
+    // Method declarations (class methods)
+    if (ts.isMethodDeclaration(node) && node.name && ts.isIdentifier(node.name)) {
+      functions.push({
+        name: node.name.text,
+        type: 'class-method',
+        start: node.getStart(sourceFile),
+        end: node.getEnd(),
+        node,
+      });
+    }
+    
+    // Variable statements: const foo = function() {} or const foo = function bar() {}
+    if (ts.isVariableStatement(node)) {
+      for (const declaration of node.declarationList.declarations) {
+        if (declaration.initializer) {
+          // Arrow functions
+          if (ts.isArrowFunction(declaration.initializer)) {
+            if (ts.isIdentifier(declaration.name)) {
+              functions.push({
+                name: declaration.name.text,
+                type: 'arrow-function',
+                start: declaration.getStart(sourceFile),
+                end: declaration.getEnd(),
+                node: declaration,
+              });
+            }
+          }
+          // Named function expressions: const foo = function bar() {}
+          else if (ts.isFunctionExpression(declaration.initializer)) {
+            const funcExpr = declaration.initializer;
+            // Use the function name if it has one, otherwise use the variable name
+            const name = funcExpr.name
+              ? funcExpr.name.text
+              : ts.isIdentifier(declaration.name)
+              ? declaration.name.text
+              : 'anonymous';
+            
+            if (name !== 'anonymous') {
+              functions.push({
+                name,
+                type: 'function',
+                start: declaration.getStart(sourceFile),
+                end: declaration.getEnd(),
+                node: declaration,
+              });
+            }
+          }
+        }
+      }
+    }
+    
+    // Object method shorthand
+    if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name)) {
+      if (ts.isFunctionExpression(node.initializer) || ts.isArrowFunction(node.initializer)) {
+        functions.push({
+          name: node.name.text,
+          type: 'method',
+          start: node.getStart(sourceFile),
+          end: node.getEnd(),
+          node,
+        });
+      }
+    }
+    
+    ts.forEachChild(node, visit);
+  }
+  
+  visit(sourceFile);
+  return functions;
+}
+
+/**
+ * Get line number from character position
+ * 
+ * Note: For performance, consider caching line start positions if called
+ * repeatedly on the same source. TypeScript's SourceFile.getLineAndCharacterOfPosition
+ * could be used as an alternative.
+ */
+function getLineNumber(source: string, position: number): number {
+  return source.substring(0, position).split('\n').length;
+}
+
+/**
+ * Check if a function overlaps with changed ranges
+ * 
+ * Note: Only uses 'addition' ranges for overlap detection. Deletion ranges
+ * use OLD file line numbers and don't map to the new file, so they're
+ * excluded from overlap checks (but kept in metadata).
+ */
+function functionOverlapsChanges(
+  func: FunctionNode,
+  changedRanges: ChangedRange[],
+  source: string
+): boolean {
+  const funcStartLine = getLineNumber(source, func.start);
+  const funcEndLine = getLineNumber(source, func.end);
+  
+  // Only check addition ranges - deletions use old file line numbers
+  const additionRanges = changedRanges.filter(r => r.type === 'addition');
+  
+  for (const range of additionRanges) {
+    // Check if changed range overlaps with function
+    if (
+      (range.start >= funcStartLine && range.start <= funcEndLine) ||
+      (range.end >= funcStartLine && range.end <= funcEndLine) ||
+      (range.start <= funcStartLine && range.end >= funcEndLine)
+    ) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Extract code snippet for a function
+ */
+function extractCodeSnippet(source: string, func: FunctionNode): string {
+  return source.substring(func.start, func.end);
+}
+
+/**
+ * Extract minimal context around a function (previous function + next few lines)
+ */
+function extractContext(source: string, func: FunctionNode, allFunctions: FunctionNode[]): string {
+  const funcStartLine = getLineNumber(source, func.start);
+  const funcEndLine = getLineNumber(source, func.end);
+  
+  // Find previous function
+  const previousFunc = allFunctions
+    .filter(f => getLineNumber(source, f.end) < funcStartLine)
+    .sort((a, b) => getLineNumber(source, b.end) - getLineNumber(source, a.end))[0];
+  
+  const contextStart = previousFunc
+    ? getLineNumber(source, previousFunc.start)
+    : Math.max(1, funcStartLine - 10);
+  
+  const lines = source.split('\n');
+  const contextLines = lines.slice(contextStart - 1, funcEndLine + 5);
+  
+  return contextLines.join('\n');
+}
+
+/**
+ * Detect existing test file for a source file by actually checking the repository
+ */
+async function detectTestFile(
+  filePath: string,
+  ref: string,
+  githubClient: { fileExists: (ref: string, path: string) => Promise<boolean> },
+  testDirectory: string
+): Promise<string | undefined> {
+  const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+  const baseName = filePath.substring(filePath.lastIndexOf('/') + 1).replace(/\.(ts|tsx)$/, '');
+  const ext = filePath.endsWith('.tsx') ? 'tsx' : 'ts';
+  
+  // Test file patterns to check (avoid redundancy - check .test.tsx and .spec.tsx only if source is .tsx)
+  const testPatterns = ext === 'tsx' 
+    ? [`.test.tsx`, `.spec.tsx`, `.test.ts`, `.spec.ts`]
+    : [`.test.ts`, `.spec.ts`];
+  
+  // Locations to check (in order of preference, deduplicated)
+  const locations = [
+    // Co-located in same directory
+    ...testPatterns.map(pattern => `${dir}/${baseName}${pattern}`),
+    // Co-located __tests__ directory
+    ...testPatterns.map(pattern => `${dir}/__tests__/${baseName}${pattern}`),
+    // Test directory at root
+    ...testPatterns.map(pattern => `${testDirectory}/${baseName}${pattern}`),
+    // Nested test directory matching source structure
+    ...testPatterns.map(pattern => `${testDirectory}${dir}/${baseName}${pattern}`),
+    // __tests__ at root
+    ...testPatterns.map(pattern => `__tests__/${baseName}${pattern}`),
+  ];
+  
+  // Check each location to see if file actually exists
+  for (const testPath of locations) {
+    const exists = await githubClient.fileExists(ref, testPath);
+    if (exists) {
+      return testPath;
+    }
+  }
+  
+  return undefined;
+}
+
+/**
+ * Analyze TypeScript file and extract test targets
+ */
+export async function analyzeFile(
+  filePath: string,
+  content: string,
+  changedRanges: ChangedRange[],
+  ref: string,
+  githubClient: { fileExists: (ref: string, path: string) => Promise<boolean> },
+  testDirectory: string
+): Promise<TestTarget[]> {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    content,
+    ts.ScriptTarget.Latest,
+    true
+  );
+  
+  const functions = extractFunctions(sourceFile);
+  
+  // Check for existing test file once per file (not per function)
+  const existingTestFile = await detectTestFile(filePath, ref, githubClient, testDirectory);
+  
+  const targets: TestTarget[] = [];
+  
+  for (const func of functions) {
+    if (functionOverlapsChanges(func, changedRanges, content)) {
+      const startLine = getLineNumber(content, func.start);
+      const endLine = getLineNumber(content, func.end);
+      
+      targets.push({
+        filePath,
+        functionName: func.name,
+        functionType: func.type,
+        startLine,
+        endLine,
+        code: extractCodeSnippet(content, func),
+        context: extractContext(content, func, functions),
+        existingTestFile,
+        changedRanges: changedRanges.filter(
+          r => r.start >= startLine && r.end <= endLine
+        ),
+      });
+      
+      debug(`Found test target: ${func.name} (${func.type}) in ${filePath}${existingTestFile ? ` - existing test: ${existingTestFile}` : ''}`);
+    }
+  }
+  
+  return targets;
+}
+

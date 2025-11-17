@@ -1,5 +1,5 @@
 import { Octokit } from '@octokit/rest';
-import type { PullRequest, PullRequestFile, FileContents, GitHubClientOptions } from '../types/github.js';
+import type { PullRequest, PullRequestFile, FileContents, GitHubClientOptions, BatchCommitOptions } from '../types/github.js';
 import { debug, error, warn } from '../utils/logger.js';
 
 /**
@@ -134,41 +134,117 @@ export class GitHubClient {
   }
 
   /**
-   * Commit or update a file in the repository
+   * Commit multiple files in a single commit using Git tree API
    */
-  async commitOrUpdateFile(
-    path: string,
-    content: string,
-    message: string,
-    branch: string,
-    sha?: string
-  ): Promise<string> {
+  async commitFiles(options: BatchCommitOptions): Promise<string> {
     return this.withRetry(async () => {
-      debug(`Committing file: ${path} to branch ${branch}`);
-      
-      const fileContent = Buffer.from(content, 'utf-8').toString('base64');
+      debug(`Committing ${options.files.length} file(s) to branch ${options.branch}`);
 
-      const params: Parameters<typeof this.octokit.rest.repos.createOrUpdateFileContents>[0] = {
+      // Get the base tree SHA
+      const baseCommit = await this.octokit.rest.repos.getCommit({
         owner: this.owner,
         repo: this.repo,
-        path,
-        message,
-        content: fileContent,
-        branch,
-      };
+        ref: options.baseSha,
+      });
+      const baseTreeSha = baseCommit.data.commit.tree.sha;
 
-      if (sha) {
-        params.sha = sha;
-      }
+      // Create blobs for all files
+      const blobPromises = options.files.map(async (file) => {
+        const blobResponse = await this.octokit.rest.git.createBlob({
+          owner: this.owner,
+          repo: this.repo,
+          content: Buffer.from(file.content, 'utf-8').toString('base64'),
+          encoding: 'base64',
+        });
+        return {
+          path: file.path,
+          sha: blobResponse.data.sha,
+          mode: '100644' as const,
+          type: 'blob' as const,
+        };
+      });
 
-      const response = await this.octokit.rest.repos.createOrUpdateFileContents(params);
-      
-      if (!response.data.commit.sha) {
-        throw new Error('Failed to get commit SHA from response');
-      }
-      
-      return response.data.commit.sha;
-    }, `commitOrUpdateFile(${path})`);
+      const treeItems = await Promise.all(blobPromises);
+
+      // Create a new tree with the blobs
+      const treeResponse = await this.octokit.rest.git.createTree({
+        owner: this.owner,
+        repo: this.repo,
+        base_tree: baseTreeSha,
+        tree: treeItems,
+      });
+
+      // Create the commit
+      const commitResponse = await this.octokit.rest.git.createCommit({
+        owner: this.owner,
+        repo: this.repo,
+        message: options.message,
+        tree: treeResponse.data.sha,
+        parents: [options.baseSha],
+      });
+
+      // Update the branch reference
+      await this.octokit.rest.git.updateRef({
+        owner: this.owner,
+        repo: this.repo,
+        ref: `heads/${options.branch}`,
+        sha: commitResponse.data.sha,
+      });
+
+      return commitResponse.data.sha;
+    }, `commitFiles(${options.files.length} files)`);
+  }
+
+  /**
+   * Create a new branch from a base ref
+   */
+  async createBranch(branchName: string, baseRef: string): Promise<string> {
+    return this.withRetry(async () => {
+      debug(`Creating branch ${branchName} from ${baseRef}`);
+
+      // Get the SHA of the base ref
+      const baseRefResponse = await this.octokit.rest.git.getRef({
+        owner: this.owner,
+        repo: this.repo,
+        ref: baseRef.startsWith('refs/') ? baseRef : `heads/${baseRef}`,
+      });
+      const baseSha = baseRefResponse.data.object.sha;
+
+      // Create the new branch
+      await this.octokit.rest.git.createRef({
+        owner: this.owner,
+        repo: this.repo,
+        ref: `refs/heads/${branchName}`,
+        sha: baseSha,
+      });
+
+      return baseSha;
+    }, `createBranch(${branchName})`);
+  }
+
+  /**
+   * Create a pull request
+   */
+  async createPullRequest(
+    title: string,
+    body: string,
+    head: string,
+    base: string
+  ): Promise<PullRequest> {
+    return this.withRetry(async () => {
+      debug(`Creating PR: ${head} -> ${base}`);
+
+      const response = await this.octokit.rest.pulls.create({
+        owner: this.owner,
+        repo: this.repo,
+        title,
+        body,
+        head,
+        base,
+      });
+
+      return response.data as PullRequest;
+    }, `createPullRequest(${head} -> ${base})`);
   }
 
   /**
@@ -184,6 +260,28 @@ export class GitHubClient {
         body,
       });
     }, `commentPR(${prNumber})`);
+  }
+
+  /**
+   * Check if a file exists in the repository
+   */
+  async fileExists(ref: string, path: string): Promise<boolean> {
+    return this.withRetry(async () => {
+      try {
+        await this.octokit.rest.repos.getContent({
+          owner: this.owner,
+          repo: this.repo,
+          path,
+          ref,
+        });
+        return true;
+      } catch (err) {
+        if (err instanceof Error && err.message.includes('404')) {
+          return false;
+        }
+        throw err;
+      }
+    }, `fileExists(${ref}, ${path})`);
   }
 
   /**
