@@ -38,3 +38,19 @@ export type {
   TestTarget,
 } from './types/diff.js';
 
+// LLM integration
+export { TestGenerator } from './llm/test-generator.js';
+export { createLLMProvider } from './llm/factory.js';
+export { parseTestCode, validateTestCodeStructure } from './llm/parser.js';
+export { buildTestGenerationPrompt } from './llm/prompts/test-generation.js';
+export { buildTestFixPrompt } from './llm/prompts/test-fix.js';
+export type {
+  LLMMessage,
+  LLMResponse,
+  LLMProvider,
+  LLMGenerateOptions,
+  TestGenerationContext,
+  TestGenerationResult,
+  TestFixContext,
+} from './types/llm.js';
+
