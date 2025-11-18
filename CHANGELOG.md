@@ -1,3 +1,10 @@
+# [0.2.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.1.0...v0.2.0) (2025-11-18)
+
+
+### Features
+
+* **llm tests:** Very rough copy of llm test generator ([#6](https://github.com/Lokardo-Labs/kakarot-ci/issues/6)) ([969e026](https://github.com/Lokardo-Labs/kakarot-ci/commit/969e0260e71bcfab0b9e1d0a43b53c024544e00a))
+
 # [0.1.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.0.0...v0.1.0) (2025-11-17)
 
 
