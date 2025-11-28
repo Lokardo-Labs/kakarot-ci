@@ -9,8 +9,9 @@ export function getTestFilePath(
   config: Pick<KakarotConfig, 'testLocation' | 'testDirectory' | 'testFilePattern'>
 ): string {
   const sourcePath = target.filePath;
-  const dir = sourcePath.substring(0, sourcePath.lastIndexOf('/'));
-  const baseName = sourcePath.substring(sourcePath.lastIndexOf('/') + 1).replace(/\.(ts|tsx|js|jsx)$/, '');
+  const lastSlashIndex = sourcePath.lastIndexOf('/');
+  const dir = lastSlashIndex >= 0 ? sourcePath.substring(0, lastSlashIndex) : '';
+  const baseName = sourcePath.substring(lastSlashIndex + 1).replace(/\.(ts|tsx|js|jsx)$/, '');
   
   // Determine file extension
   let ext: 'ts' | 'tsx' | 'js' | 'jsx';
@@ -24,7 +25,7 @@ export function getTestFilePath(
 
   if (config.testLocation === 'co-located') {
     // Co-located: same directory as source file
-    return `${dir}/${baseName}.test.${testExt}`;
+    return dir ? `${dir}/${baseName}.test.${testExt}` : `${baseName}.test.${testExt}`;
   } else {
     // Separate: in test directory
     // Replace testFilePattern wildcard with actual filename
