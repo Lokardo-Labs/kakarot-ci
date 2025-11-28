@@ -6,7 +6,7 @@ import { error } from './logger.js';
 /**
  * Find the project root by walking up the directory tree until package.json is found
  */
-function findProjectRoot(startPath?: string): string {
+export function findProjectRoot(startPath?: string): string {
   const start = startPath ?? process.cwd();
   let current = start;
   let previous: string | null = null;

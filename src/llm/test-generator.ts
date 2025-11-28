@@ -102,5 +102,21 @@ export class TestGenerator {
       throw err;
     }
   }
+
+  /**
+   * Generate a human-readable coverage summary
+   */
+  async generateCoverageSummary(messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>): Promise<string> {
+    try {
+      const response = await this.provider.generate(messages, {
+        temperature: 0.3,
+        maxTokens: 500,
+      });
+      return response.content;
+    } catch (err) {
+      error(`Failed to generate coverage summary: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
+    }
+  }
 }
 
