@@ -3,6 +3,8 @@ import { z } from 'zod';
 export const KakarotConfigSchema = z.object({
   apiKey: z.string(),
   githubToken: z.string().optional(),
+  githubOwner: z.string().optional(),
+  githubRepo: z.string().optional(),
   provider: z.enum(['openai', 'anthropic', 'google']).optional(),
   model: z.string().optional(),
   maxTokens: z.number().int().min(1).max(100000).optional(),
