@@ -1,5 +1,6 @@
 {
   "root": true,
+  "ignorePatterns": ["build.js", "dist/**", "node_modules/**"],
   "parser": "@typescript-eslint/parser",
   "parserOptions": {
     "ecmaVersion": 2020,

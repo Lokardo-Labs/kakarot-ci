@@ -32,5 +32,18 @@ const baseConfig = {
   logLevel: 'info',
 };
 
+// Build main package
 build(baseConfig).catch(() => process.exit(1));
+
+// Build CLI entry point (only for ESM)
+if (isESM) {
+  build({
+    ...baseConfig,
+    entryPoints: ['src/cli/index.ts'],
+    outfile: 'dist/cli/index.js',
+    banner: {
+      js: '#!/usr/bin/env node',
+    },
+  }).catch(() => process.exit(1));
+}
 

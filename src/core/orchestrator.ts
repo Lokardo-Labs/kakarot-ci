@@ -218,7 +218,7 @@ export async function runPullRequest(context: PullRequestContext): Promise<TestG
   }
 
   // Write tests to disk and run them
-  const projectRoot = findProjectRoot();
+  const projectRoot = await findProjectRoot();
   const packageManager = detectPackageManager(projectRoot);
   info(`Detected package manager: ${packageManager}`);
 

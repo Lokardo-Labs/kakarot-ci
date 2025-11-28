@@ -1,164 +1,95 @@
-import { existsSync, readFileSync } from 'fs';
-import { join, dirname } from 'path';
+import { cosmiconfig } from 'cosmiconfig';
+import { findUp } from 'find-up';
 import { KakarotConfigSchema, type KakarotConfig, type PartialKakarotConfig } from '../types/config.js';
 import { error } from './logger.js';
 
 /**
- * Find the project root by walking up the directory tree until package.json is found
+ * Find the project root by locating package.json
  */
-export function findProjectRoot(startPath?: string): string {
-  const start = startPath ?? process.cwd();
-  let current = start;
-  let previous: string | null = null;
-
-  // Walk up until we find package.json or hit filesystem root
-  while (current !== previous) {
-    if (existsSync(join(current, 'package.json'))) {
-      return current;
-    }
-    previous = current;
-    current = dirname(current);
-  }
-
-  return start;
-}
-
-/**
- * Load config from kakarot.config.ts
- */
-async function loadTypeScriptConfig(root: string): Promise<PartialKakarotConfig | null> {
-  const configPath = join(root, 'kakarot.config.ts');
+export async function findProjectRoot(startPath?: string): Promise<string> {
+  const packageJsonPath = await findUp('package.json', {
+    cwd: startPath ?? process.cwd(),
+  });
   
-  if (!existsSync(configPath)) {
-    return null;
+  if (packageJsonPath) {
+    const { dirname } = await import('path');
+    return dirname(packageJsonPath);
   }
-
-  try {
-    // Dynamic import for TypeScript config file
-    // Note: This requires the file to be transpiled or use tsx/ts-node in runtime
-    // For now, we'll attempt to import it directly
-    const configModule = await import(configPath);
-    return configModule.default || configModule.config || null;
-  } catch (err) {
-    error(`Failed to load kakarot.config.ts: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
-  }
-}
-
-/**
- * Load config from .kakarot-ci.config.js
- */
-async function loadJavaScriptConfig(root: string): Promise<PartialKakarotConfig | null> {
-  const configPath = join(root, '.kakarot-ci.config.js');
   
-  if (!existsSync(configPath)) {
-    return null;
-  }
-
-  try {
-    const configModule = await import(configPath);
-    return configModule.default || configModule.config || null;
-  } catch (err) {
-    error(`Failed to load .kakarot-ci.config.js: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
-  }
-}
-
-/**
- * Load config from .kakarot-ci.config.json
- */
-function loadJsonConfig(root: string): PartialKakarotConfig | null {
-  const configPath = join(root, '.kakarot-ci.config.json');
-  
-  if (!existsSync(configPath)) {
-    return null;
-  }
-
-  try {
-    const content = readFileSync(configPath, 'utf-8');
-    return JSON.parse(content) as PartialKakarotConfig;
-  } catch (err) {
-    error(`Failed to load .kakarot-ci.config.json: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
-  }
-}
-
-/**
- * Load config from package.json → kakarotCi field
- */
-function loadPackageJsonConfig(root: string): PartialKakarotConfig | null {
-  const packagePath = join(root, 'package.json');
-  
-  if (!existsSync(packagePath)) {
-    return null;
-  }
-
-  try {
-    const content = readFileSync(packagePath, 'utf-8');
-    const pkg = JSON.parse(content) as { kakarotCi?: PartialKakarotConfig };
-    return pkg.kakarotCi || null;
-  } catch (err) {
-    error(`Failed to load package.json: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
-  }
-}
-
-/**
- * Merge environment variables with loaded config
- */
-function mergeEnvConfig(config: PartialKakarotConfig): PartialKakarotConfig {
-  const merged = { ...config };
-
-  // Load apiKey from environment if not in config
-  if (!merged.apiKey && process.env.KAKAROT_API_KEY) {
-    merged.apiKey = process.env.KAKAROT_API_KEY;
-  }
-
-  // Load githubToken from environment if not in config
-  if (!merged.githubToken && process.env.GITHUB_TOKEN) {
-    merged.githubToken = process.env.GITHUB_TOKEN;
-  }
-
-  return merged;
+  return startPath ?? process.cwd();
 }
 
 /**
  * Load and validate Kakarot configuration
  */
 export async function loadConfig(): Promise<KakarotConfig> {
-  const projectRoot = findProjectRoot();
-  let config: PartialKakarotConfig | null = null;
+  const explorer = cosmiconfig('kakarot', {
+    searchPlaces: [
+      'kakarot.config.ts',
+      'kakarot.config.js',
+      '.kakarot-ci.config.ts',
+      '.kakarot-ci.config.js',
+      '.kakarot-ci.config.json',
+      'package.json',
+    ],
+    loaders: {
+      '.ts': async (filepath: string) => {
+        // Dynamic import for TypeScript config file
+        // Note: This requires the file to be transpiled or use tsx/ts-node in runtime
+        try {
+          const configModule = await import(filepath);
+          return configModule.default || configModule.config || null;
+        } catch (err) {
+          error(`Failed to load TypeScript config: ${err instanceof Error ? err.message : String(err)}`);
+          return null;
+        }
+      },
+    },
+  });
 
-  config = await loadTypeScriptConfig(projectRoot);
-  if (config) {
-    return KakarotConfigSchema.parse(mergeEnvConfig(config));
-  }
-
-  config = await loadJavaScriptConfig(projectRoot);
-  if (config) {
-    return KakarotConfigSchema.parse(mergeEnvConfig(config));
-  }
-
-  config = loadJsonConfig(projectRoot);
-  if (config) {
-    return KakarotConfigSchema.parse(mergeEnvConfig(config));
-  }
-
-  config = loadPackageJsonConfig(projectRoot);
-  if (config) {
-    return KakarotConfigSchema.parse(mergeEnvConfig(config));
-  }
-
-  // No config found, try to load from environment only
-  const envConfig = mergeEnvConfig({});
   try {
-    return KakarotConfigSchema.parse(envConfig);
+    const result = await explorer.search();
+    
+    let config: PartialKakarotConfig = {};
+    
+    if (result?.config) {
+      config = result.config as PartialKakarotConfig;
+    }
+    
+    // Also check package.json for kakarotCi field
+    if (!result || result.filepath?.endsWith('package.json')) {
+      const packageJsonPath = await findUp('package.json');
+      if (packageJsonPath) {
+        const { readFileSync } = await import('fs');
+        try {
+          const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as { kakarotCi?: PartialKakarotConfig };
+          if (pkg.kakarotCi) {
+            config = { ...config, ...pkg.kakarotCi };
+          }
+        } catch {
+          // Ignore package.json parse errors
+        }
+      }
+    }
+    
+    // Merge environment variables
+    if (!config.apiKey && process.env.KAKAROT_API_KEY) {
+      config.apiKey = process.env.KAKAROT_API_KEY;
+    }
+    
+    if (!config.githubToken && process.env.GITHUB_TOKEN) {
+      config.githubToken = process.env.GITHUB_TOKEN;
+    }
+    
+    return KakarotConfigSchema.parse(config);
   } catch (err) {
-    error(
-      'Missing required apiKey. Provide it via:\n' +
-      '  - Config file (kakarot.config.ts, .kakarot-ci.config.js/json, or package.json)\n' +
-      '  - Environment variable: KAKAROT_API_KEY'
-    );
+    if (err instanceof Error && err.message.includes('apiKey')) {
+      error(
+        'Missing required apiKey. Provide it via:\n' +
+        '  - Config file (kakarot.config.ts, .kakarot-ci.config.js/json, or package.json)\n' +
+        '  - Environment variable: KAKAROT_API_KEY'
+      );
+    }
     throw err;
   }
 }
