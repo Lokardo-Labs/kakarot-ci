@@ -1,3 +1,11 @@
+# [0.3.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.2.0...v0.3.0) (2025-11-28)
+
+
+### Features
+
+* **CLI tool:** Adds CLI and improves our own code ([#9](https://github.com/Lokardo-Labs/kakarot-ci/issues/9)) ([684df7c](https://github.com/Lokardo-Labs/kakarot-ci/commit/684df7c1c72874d932e7cc45b72ca6e818bb17f0))
+* **test generator:** Adding in test generator with basic rules ([#8](https://github.com/Lokardo-Labs/kakarot-ci/issues/8)) ([ea51ef0](https://github.com/Lokardo-Labs/kakarot-ci/commit/ea51ef09527870e9bca77483cd98141dd6d38419))
+
 # [0.2.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.1.0...v0.2.0) (2025-11-18)
 
 
