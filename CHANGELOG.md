@@ -1,3 +1,15 @@
+# [0.4.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.3.0...v0.4.0) (2025-11-28)
+
+
+### Bug Fixes
+
+* **build:** Fixing the build ([#11](https://github.com/Lokardo-Labs/kakarot-ci/issues/11)) ([3ca68e1](https://github.com/Lokardo-Labs/kakarot-ci/commit/3ca68e1b18883cea5781f6b39d968879eca0664a))
+
+
+### Features
+
+* **initial tests:** Setting up vitest and adding initial tests ([#10](https://github.com/Lokardo-Labs/kakarot-ci/issues/10)) ([d05033a](https://github.com/Lokardo-Labs/kakarot-ci/commit/d05033a4310f9ef8b25e3c9e3f0b3d4b30abc983))
+
 # [0.3.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.2.0...v0.3.0) (2025-11-28)
 
 
