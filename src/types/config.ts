@@ -9,6 +9,7 @@ export const KakarotConfigSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   fixTemperature: z.number().min(0).max(2).optional(),
   maxFixAttempts: z.number().int().min(0).max(5).default(3),
+  framework: z.enum(['jest', 'vitest']),
   testLocation: z.enum(['separate', 'co-located']).default('separate'),
   testDirectory: z.string().default('__tests__'),
   testFilePattern: z.string().default('*.test.ts'),
