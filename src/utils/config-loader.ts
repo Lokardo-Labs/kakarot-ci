@@ -81,6 +81,15 @@ export async function loadConfig(): Promise<KakarotConfig> {
       config.githubToken = process.env.GITHUB_TOKEN;
     }
     
+    // Merge provider and model from env (allow override from config file)
+    if (process.env.PROVIDER) {
+      config.provider = process.env.PROVIDER as 'openai' | 'anthropic' | 'google';
+    }
+    
+    if (process.env.MODEL) {
+      config.model = process.env.MODEL;
+    }
+    
     return KakarotConfigSchema.parse(config);
   } catch (err) {
     if (err instanceof Error && err.message.includes('apiKey')) {
