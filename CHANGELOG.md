@@ -1,3 +1,10 @@
+# [0.6.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.5.1...v0.6.0) (2025-11-29)
+
+
+### Features
+
+* **env:** Updating names of env variables and how they can source ([#16](https://github.com/Lokardo-Labs/kakarot-ci/issues/16)) ([d3aac65](https://github.com/Lokardo-Labs/kakarot-ci/commit/d3aac651981d9abd8cce55e7e88a5a72fd7ac3e6))
+
 ## [0.5.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.5.0...v0.5.1) (2025-11-29)
 
 
