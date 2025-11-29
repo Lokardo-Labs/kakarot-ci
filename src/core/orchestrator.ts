@@ -261,23 +261,35 @@ export async function runPullRequest(context: PullRequestContext): Promise<TestG
     const testRunner = createTestRunner(framework);
     const writtenPaths = Array.from(testFiles.keys());
     
-    info('Running tests with coverage...');
-    const finalTestResults = await testRunner.runTests({
-      testFiles: writtenPaths,
-      framework,
-      packageManager,
-      projectRoot,
-      coverage: true,
-    });
+    try {
+      info('Running tests with coverage...');
+      const finalTestResults = await testRunner.runTests({
+        testFiles: writtenPaths,
+        framework,
+        packageManager,
+        projectRoot,
+        coverage: true,
+      });
 
-    // Read coverage report
-    const coverageReport = readCoverageReport(projectRoot, framework);
-    if (coverageReport) {
-      info(`Coverage collected: ${coverageReport.total.lines.percentage.toFixed(1)}% lines`);
-      summary.coverageReport = coverageReport;
-      summary.testResults = finalTestResults;
-    } else {
-      warn('Could not read coverage report');
+      // Read coverage report
+      const coverageReport = readCoverageReport(projectRoot, framework);
+      if (coverageReport) {
+        info(`Coverage collected: ${coverageReport.total.lines.percentage.toFixed(1)}% lines`);
+        summary.coverageReport = coverageReport;
+        summary.testResults = finalTestResults;
+      } else {
+        warn('Could not read coverage report');
+      }
+    } catch (err) {
+      // Coverage is optional - if it fails (e.g., missing coverage package), continue without it
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (errorMessage.includes('coverage') || errorMessage.includes('MISSING DEPENDENCY')) {
+        warn(`Coverage collection failed (likely missing coverage package): ${errorMessage}`);
+        warn('Continuing without coverage report');
+      } else {
+        // Re-throw unexpected errors
+        throw err;
+      }
     }
   }
 
