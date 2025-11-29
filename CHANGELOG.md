@@ -1,3 +1,10 @@
+## [0.6.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.0...v0.6.1) (2025-11-29)
+
+
+### Bug Fixes
+
+* **files:** Fixing file parsing to accurately find files ([#17](https://github.com/Lokardo-Labs/kakarot-ci/issues/17)) ([8a849cf](https://github.com/Lokardo-Labs/kakarot-ci/commit/8a849cfab85bdc71cd136c69b383e574b2a08f32))
+
 # [0.6.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.5.1...v0.6.0) (2025-11-29)
 
 
