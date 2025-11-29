@@ -20,11 +20,29 @@ export async function extractTestTargets(
   // Parse diffs
   const diffs = parsePullRequestFiles(files);
   
+  // Convert glob pattern to regex
+  const globToRegex = (pattern: string): RegExp => {
+    // Escape dots first (before any replacements)
+    let regexStr = pattern.replace(/\./g, '\\.');
+    // Replace **/ as a unit (zero or more directories with trailing slash)
+    regexStr = regexStr.replace(/\*\*\//g, '__DOUBLE_STAR_SLASH__');
+    // Replace remaining ** with placeholder
+    regexStr = regexStr.replace(/\*\*/g, '__DOUBLE_STAR__');
+    // Replace single * with [^/]* (matches any chars except /)
+    regexStr = regexStr.replace(/\*/g, '[^/]*');
+    // Replace **/ placeholder: matches zero or more directories (with optional trailing slash)
+    regexStr = regexStr.replace(/__DOUBLE_STAR_SLASH__/g, '(.*/)?');
+    // Replace remaining ** placeholder: matches anything (including /)
+    regexStr = regexStr.replace(/__DOUBLE_STAR__/g, '.*');
+    // Anchor to start and end for exact matching
+    return new RegExp(`^${regexStr}$`);
+  };
+
   // Filter by include/exclude patterns
   const filteredDiffs = diffs.filter(diff => {
     // Check include patterns
     const matchesInclude = config.includePatterns.some(pattern => {
-      const regex = new RegExp(pattern.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*'));
+      const regex = globToRegex(pattern);
       return regex.test(diff.filename);
     });
     
@@ -32,7 +50,7 @@ export async function extractTestTargets(
     
     // Check exclude patterns
     const matchesExclude = config.excludePatterns.some(pattern => {
-      const regex = new RegExp(pattern.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*'));
+      const regex = globToRegex(pattern);
       return regex.test(diff.filename);
     });
     
