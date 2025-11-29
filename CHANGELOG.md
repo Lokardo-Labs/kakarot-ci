@@ -1,3 +1,10 @@
+## [0.4.2](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.4.1...v0.4.2) (2025-11-29)
+
+
+### Bug Fixes
+
+* **tests:** Adding a load of tests ([#13](https://github.com/Lokardo-Labs/kakarot-ci/issues/13)) ([bdcf9a5](https://github.com/Lokardo-Labs/kakarot-ci/commit/bdcf9a5b3c456257bb8cc951f00382f5e4357530))
+
 ## [0.4.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.4.0...v0.4.1) (2025-11-28)
 
 
