@@ -35,6 +35,12 @@ export class GitHubClient {
     try {
       return await fn();
     } catch (err) {
+      // Don't retry on 404 errors - they're expected for file not found
+      const isNotFound = err && typeof err === 'object' && 'status' in err && err.status === 404;
+      if (isNotFound) {
+        throw err; // Re-throw so caller can handle it
+      }
+
       if (retries <= 0) {
         error(`${operation} failed after ${this.maxRetries} retries: ${err instanceof Error ? err.message : String(err)}`);
         throw err;
@@ -266,27 +272,31 @@ export class GitHubClient {
    * Check if a file exists in the repository
    */
   async fileExists(ref: string, path: string): Promise<boolean> {
-    return this.withRetry(async () => {
-      try {
-        await this.octokit.rest.repos.getContent({
-          owner: this.owner,
-          repo: this.repo,
-          path,
-          ref,
-        });
-        return true;
-      } catch (err) {
-        // Handle 404 as file not found (not an error)
-        if (err && typeof err === 'object' && 'status' in err && err.status === 404) {
-          return false;
-        }
-        // Also check error message for 404 (fallback)
-        if (err instanceof Error && (err.message.includes('404') || err.message.includes('Not Found'))) {
-          return false;
-        }
-        throw err;
+    try {
+      await this.octokit.rest.repos.getContent({
+        owner: this.owner,
+        repo: this.repo,
+        path,
+        ref,
+      });
+      return true;
+    } catch (err) {
+      // Handle 404 as file not found (not an error)
+      // Octokit RequestError has status property at the top level
+      const status = (err && typeof err === 'object' && 'status' in err) ? (err as { status: number }).status : undefined;
+      if (status === 404) {
+        return false;
       }
-    }, `fileExists(${ref}, ${path})`);
+      // Also check error message for 404 (fallback for different error formats)
+      if (err instanceof Error) {
+        const message = err.message.toLowerCase();
+        if (message.includes('404') || message.includes('not found')) {
+          return false;
+        }
+      }
+      // For any other error, throw it (will be handled by withRetry if called from other methods)
+      throw err;
+    }
   }
 
   /**
