@@ -5,6 +5,7 @@ import { GitHubClient } from '../github/client.js';
 import { parsePullRequestFiles, getChangedRanges } from './diff-parser.js';
 import { analyzeFile } from './ast-analyzer.js';
 import { debug, info } from './logger.js';
+import { minimatch } from 'minimatch';
 
 /**
  * Extract test targets from pull request files
@@ -20,38 +21,18 @@ export async function extractTestTargets(
   // Parse diffs
   const diffs = parsePullRequestFiles(files);
   
-  // Convert glob pattern to regex
-  const globToRegex = (pattern: string): RegExp => {
-    // Escape dots first (before any replacements)
-    let regexStr = pattern.replace(/\./g, '\\.');
-    // Replace **/ as a unit (zero or more directories with trailing slash)
-    regexStr = regexStr.replace(/\*\*\//g, '__DOUBLE_STAR_SLASH__');
-    // Replace remaining ** with placeholder
-    regexStr = regexStr.replace(/\*\*/g, '__DOUBLE_STAR__');
-    // Replace single * with [^/]* (matches any chars except /)
-    regexStr = regexStr.replace(/\*/g, '[^/]*');
-    // Replace **/ placeholder: matches zero or more directories (with optional trailing slash)
-    regexStr = regexStr.replace(/__DOUBLE_STAR_SLASH__/g, '(.*/)?');
-    // Replace remaining ** placeholder: matches anything (including /)
-    regexStr = regexStr.replace(/__DOUBLE_STAR__/g, '.*');
-    // Anchor to start and end for exact matching
-    return new RegExp(`^${regexStr}$`);
-  };
-
-  // Filter by include/exclude patterns
+  // Filter by include/exclude patterns using minimatch
   const filteredDiffs = diffs.filter(diff => {
     // Check include patterns
     const matchesInclude = config.includePatterns.some(pattern => {
-      const regex = globToRegex(pattern);
-      return regex.test(diff.filename);
+      return minimatch(diff.filename, pattern);
     });
     
     if (!matchesInclude) return false;
     
     // Check exclude patterns
     const matchesExclude = config.excludePatterns.some(pattern => {
-      const regex = globToRegex(pattern);
-      return regex.test(diff.filename);
+      return minimatch(diff.filename, pattern);
     });
     
     return !matchesExclude;
