@@ -1,3 +1,31 @@
+## [0.6.2](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.1...v0.6.2) (2025-11-29)
+
+
+### Bug Fixes
+
+* **glob:** Using minimatch ([#18](https://github.com/Lokardo-Labs/kakarot-ci/issues/18)) ([99584b7](https://github.com/Lokardo-Labs/kakarot-ci/commit/99584b702152167da71d3f4ac0bf0f050440b95f))
+
+## [0.6.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.0...v0.6.1) (2025-11-29)
+
+
+### Bug Fixes
+
+* **files:** Fixing file parsing to accurately find files ([#17](https://github.com/Lokardo-Labs/kakarot-ci/issues/17)) ([8a849cf](https://github.com/Lokardo-Labs/kakarot-ci/commit/8a849cfab85bdc71cd136c69b383e574b2a08f32))
+
+# [0.6.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.5.1...v0.6.0) (2025-11-29)
+
+
+### Features
+
+* **env:** Updating names of env variables and how they can source ([#16](https://github.com/Lokardo-Labs/kakarot-ci/issues/16)) ([d3aac65](https://github.com/Lokardo-Labs/kakarot-ci/commit/d3aac651981d9abd8cce55e7e88a5a72fd7ac3e6))
+
+## [0.5.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.5.0...v0.5.1) (2025-11-29)
+
+
+### Bug Fixes
+
+* **shebang:** Removing second shebang as one is generated ([#15](https://github.com/Lokardo-Labs/kakarot-ci/issues/15)) ([8f89d88](https://github.com/Lokardo-Labs/kakarot-ci/commit/8f89d8873764f07fbbb3ad61f60d56a7df437c4d))
+
 # [0.5.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.4.2...v0.5.0) (2025-11-29)
 
 
