@@ -1,3 +1,10 @@
+## [0.6.3](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.2...v0.6.3) (2025-11-29)
+
+
+### Bug Fixes
+
+* **errors:** 404s are not handled gracefully causing breaks ([#19](https://github.com/Lokardo-Labs/kakarot-ci/issues/19)) ([a941cd1](https://github.com/Lokardo-Labs/kakarot-ci/commit/a941cd10800c377ea6b28a8dfc02be79915d4bfb))
+
 ## [0.6.2](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.1...v0.6.2) (2025-11-29)
 
 
