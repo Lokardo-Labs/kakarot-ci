@@ -1,7 +1,10 @@
-name: Semantic Release
+name: Continuous Delivery
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Continuous Integration"]
+    types:
+      - completed
     branches:
       - main
 
@@ -9,6 +12,8 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    # Only run if tests passed
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: write
       issues: write
