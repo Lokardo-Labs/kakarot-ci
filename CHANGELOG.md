@@ -1,3 +1,10 @@
+# [0.5.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.4.2...v0.5.0) (2025-11-29)
+
+
+### Features
+
+* **ci:** Ci update ([#14](https://github.com/Lokardo-Labs/kakarot-ci/issues/14)) ([79334ae](https://github.com/Lokardo-Labs/kakarot-ci/commit/79334aecc2a8d20c492b36ece91cf351631db084))
+
 ## [0.4.2](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.4.1...v0.4.2) (2025-11-29)
 
 
