@@ -1,9 +1,3 @@
-#!/usr/bin/env node
-/**
- * CLI entry point for Kakarot CI
- * Parses CI environment variables and runs test generation
- */
-
 import { readFileSync } from 'fs';
 import { simpleGit } from 'simple-git';
 import gitUrlParse from 'git-url-parse';
