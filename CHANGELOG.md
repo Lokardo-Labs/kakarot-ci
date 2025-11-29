@@ -1,3 +1,10 @@
+## [0.6.2](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.1...v0.6.2) (2025-11-29)
+
+
+### Bug Fixes
+
+* **glob:** Using minimatch ([#18](https://github.com/Lokardo-Labs/kakarot-ci/issues/18)) ([99584b7](https://github.com/Lokardo-Labs/kakarot-ci/commit/99584b702152167da71d3f4ac0bf0f050440b95f))
+
 ## [0.6.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.0...v0.6.1) (2025-11-29)
 
 
