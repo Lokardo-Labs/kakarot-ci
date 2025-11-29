@@ -276,7 +276,12 @@ export class GitHubClient {
         });
         return true;
       } catch (err) {
-        if (err instanceof Error && err.message.includes('404')) {
+        // Handle 404 as file not found (not an error)
+        if (err && typeof err === 'object' && 'status' in err && err.status === 404) {
+          return false;
+        }
+        // Also check error message for 404 (fallback)
+        if (err instanceof Error && (err.message.includes('404') || err.message.includes('Not Found'))) {
           return false;
         }
         throw err;

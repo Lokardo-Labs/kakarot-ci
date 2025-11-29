@@ -242,13 +242,22 @@ async function detectTestFile(
   ];
   
   // Check each location to see if file actually exists
+  // If test file doesn't exist (404), that's fine - we'll create it
   for (const testPath of locations) {
-    const exists = await githubClient.fileExists(ref, testPath);
-    if (exists) {
-      return testPath;
+    try {
+      const exists = await githubClient.fileExists(ref, testPath);
+      if (exists) {
+        return testPath;
+      }
+    } catch (err) {
+      // If fileExists throws an error (shouldn't happen for 404s, but handle gracefully)
+      // Log and continue checking other locations
+      debug(`Error checking test file ${testPath}: ${err instanceof Error ? err.message : String(err)}`);
+      continue;
     }
   }
   
+  // No existing test file found - we'll create a new one
   return undefined;
 }
 
