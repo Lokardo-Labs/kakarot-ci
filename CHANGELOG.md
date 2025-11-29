@@ -1,3 +1,10 @@
+## [0.5.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.5.0...v0.5.1) (2025-11-29)
+
+
+### Bug Fixes
+
+* **shebang:** Removing second shebang as one is generated ([#15](https://github.com/Lokardo-Labs/kakarot-ci/issues/15)) ([8f89d88](https://github.com/Lokardo-Labs/kakarot-ci/commit/8f89d8873764f07fbbb3ad61f60d56a7df437c4d))
+
 # [0.5.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.4.2...v0.5.0) (2025-11-29)
 
 
