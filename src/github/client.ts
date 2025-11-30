@@ -15,11 +15,6 @@ export class GitHubClient {
   constructor(options: GitHubClientOptions) {
     this.owner = options.owner;
     this.repo = options.repo;
-    
-    // Suppress 404 errors from being logged - they're expected for file existence checks
-    const originalConsoleError = console.error;
-    const originalConsoleWarn = console.warn;
-    
     this.octokit = new Octokit({
       auth: options.token,
       request: {
@@ -27,10 +22,6 @@ export class GitHubClient {
         retryAfter: this.retryDelay / 1000,
       },
     });
-    
-    // Restore console methods after Octokit initialization
-    console.error = originalConsoleError;
-    console.warn = originalConsoleWarn;
   }
 
   /**
@@ -281,25 +272,29 @@ export class GitHubClient {
    * Check if a file exists in the repository
    */
   async fileExists(ref: string, path: string): Promise<boolean> {
-    // Suppress console errors for 404s - they're expected
+    // Suppress 404 errors from console - they're expected
     const originalError = console.error;
     const originalWarn = console.warn;
-    const suppressedError = (...args: unknown[]) => {
-      const message = args.join(' ');
-      if (!message.includes('404') && !message.includes('Not Found')) {
-        originalError(...args);
+    
+    const suppress404 = (...args: unknown[]): void => {
+      const message = String(args[0] || '');
+      if (message.includes('404') || message.includes('Not Found')) {
+        return; // Don't log 404s
       }
+      originalError(...args);
     };
-    const suppressedWarn = (...args: unknown[]) => {
-      const message = args.join(' ');
-      if (!message.includes('404') && !message.includes('Not Found')) {
-        originalWarn(...args);
+    
+    const suppress404Warn = (...args: unknown[]): void => {
+      const message = String(args[0] || '');
+      if (message.includes('404') || message.includes('Not Found')) {
+        return; // Don't log 404s
       }
+      originalWarn(...args);
     };
     
     try {
-      console.error = suppressedError;
-      console.warn = suppressedWarn;
+      console.error = suppress404;
+      console.warn = suppress404Warn;
       
       await this.octokit.rest.repos.getContent({
         owner: this.owner,

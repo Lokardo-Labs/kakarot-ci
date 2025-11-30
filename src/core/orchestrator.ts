@@ -278,14 +278,13 @@ export async function runPullRequest(context: PullRequestContext): Promise<TestG
         summary.coverageReport = coverageReport;
         summary.testResults = finalTestResults;
       } else {
-        warn('Could not read coverage report');
+        debug('Could not read coverage report (coverage package may be missing)');
       }
     } catch (err) {
       // Coverage is optional - if it fails (e.g., missing coverage package), continue without it
       const errorMessage = err instanceof Error ? err.message : String(err);
       if (errorMessage.includes('coverage') || errorMessage.includes('MISSING DEPENDENCY')) {
-        warn(`Coverage collection failed (likely missing coverage package): ${errorMessage}`);
-        warn('Continuing without coverage report');
+        debug(`Coverage collection skipped (missing coverage package): ${errorMessage.split('\n')[0]}`);
       } else {
         // Re-throw unexpected errors
         throw err;
