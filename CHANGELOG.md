@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.6...v0.7.0) (2025-11-30)
+
+
+### Features
+
+* Making coverage a config and optional ([#23](https://github.com/Lokardo-Labs/kakarot-ci/issues/23)) ([1d16d8a](https://github.com/Lokardo-Labs/kakarot-ci/commit/1d16d8a2195a441d701d31ede748de525a43d401))
+
 ## [0.6.6](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.5...v0.6.6) (2025-11-30)
 
 
