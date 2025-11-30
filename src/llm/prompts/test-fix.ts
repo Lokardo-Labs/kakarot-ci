@@ -27,13 +27,34 @@ Context:
 - The test code failed to run or produced incorrect results
 - You need to analyze the error and fix the test code
 
+CRITICAL: Tests must match the ACTUAL behavior of the code being tested, not assumed behavior.
+
 Requirements:
-1. Fix the test code to make it pass
-2. Maintain the original test intent
-3. Use proper ${frameworkName} syntax
-4. Ensure all imports and dependencies are correct
-5. Fix any syntax errors, type errors, or logical errors
-6. If the original code being tested has issues, note that but focus on fixing the test
+1. Analyze the original function code to understand its ACTUAL runtime behavior
+2. Fix the test code to match what the function actually does, not what it "should" do
+3. Only expect errors/exceptions if the function code actually throws them
+4. Match JavaScript/TypeScript runtime semantics:
+   - Arithmetic operations do NOT throw errors; they return NaN or Infinity
+   - Division by zero returns Infinity (not an error)
+   - Modulo by zero returns NaN (not an error)
+   - Bitwise operations convert values to 32-bit integers
+   - TypeScript types are compile-time only; runtime behavior follows JavaScript rules
+5. For async functions:
+   - Ensure tests properly await async calls
+   - Use resolves/rejects matchers appropriately
+   - Test both success and error cases for async functions
+6. For functions with dependencies:
+   - Ensure mocks are properly set up
+   - Verify import paths match the source file
+   - Reset mocks if needed for test isolation
+7. For error testing:
+   - Only expect errors if the function actually throws them
+   - Match actual error types and messages
+   - Use appropriate matchers (toThrow, rejects, etc.)
+8. Maintain the original test intent where possible, but prioritize correctness
+9. Use proper ${frameworkName} syntax
+10. Ensure all imports and dependencies are correct
+11. Fix any syntax errors, type errors, or logical errors
 
 Output format:
 - Return ONLY the fixed test code, no explanations or markdown code blocks
