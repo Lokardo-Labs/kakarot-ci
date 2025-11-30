@@ -1,3 +1,10 @@
+## [0.6.6](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.5...v0.6.6) (2025-11-30)
+
+
+### Bug Fixes
+
+* We don't need to add every 404  ([#22](https://github.com/Lokardo-Labs/kakarot-ci/issues/22)) ([7aeb06d](https://github.com/Lokardo-Labs/kakarot-ci/commit/7aeb06d66b9e81e1fb40c2323cb2013c6528adac))
+
 ## [0.6.5](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.4...v0.6.5) (2025-11-29)
 
 
