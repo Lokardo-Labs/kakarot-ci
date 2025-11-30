@@ -272,14 +272,15 @@ export class GitHubClient {
    * Check if a file exists in the repository
    */
   async fileExists(ref: string, path: string): Promise<boolean> {
-    // Suppress 404 errors from console - they're expected
+    // Suppress 404 error logging - they're expected when checking if files exist
     const originalError = console.error;
     const originalWarn = console.warn;
+    const originalLog = console.log;
     
     const suppress404 = (...args: unknown[]): void => {
       const message = String(args[0] || '');
       if (message.includes('404') || message.includes('Not Found')) {
-        return; // Don't log 404s
+        return;
       }
       originalError(...args);
     };
@@ -287,14 +288,23 @@ export class GitHubClient {
     const suppress404Warn = (...args: unknown[]): void => {
       const message = String(args[0] || '');
       if (message.includes('404') || message.includes('Not Found')) {
-        return; // Don't log 404s
+        return;
       }
       originalWarn(...args);
+    };
+    
+    const suppress404Log = (...args: unknown[]): void => {
+      const message = String(args[0] || '');
+      if (message.includes('404') || message.includes('Not Found')) {
+        return;
+      }
+      originalLog(...args);
     };
     
     try {
       console.error = suppress404;
       console.warn = suppress404Warn;
+      console.log = suppress404Log;
       
       await this.octokit.rest.repos.getContent({
         owner: this.owner,
@@ -304,25 +314,22 @@ export class GitHubClient {
       });
       return true;
     } catch (err) {
-      // Handle 404 as file not found (not an error)
-      // Octokit RequestError has status property at the top level
+      // 404 means file doesn't exist (not an error)
       const status = (err && typeof err === 'object' && 'status' in err) ? (err as { status: number }).status : undefined;
       if (status === 404) {
         return false;
       }
-      // Also check error message for 404 (fallback for different error formats)
       if (err instanceof Error) {
         const message = err.message.toLowerCase();
         if (message.includes('404') || message.includes('not found')) {
           return false;
         }
       }
-      // For any other error, throw it (will be handled by withRetry if called from other methods)
       throw err;
     } finally {
-      // Restore original console methods
       console.error = originalError;
       console.warn = originalWarn;
+      console.log = originalLog;
     }
   }
 
