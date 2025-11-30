@@ -1,7 +1,11 @@
-# Kakarot CI
-
-[![npm version](https://img.shields.io/npm/v/@kakarot-ci/core.svg)](https://www.npmjs.com/package/@kakarot-ci/core)
-[![Node.js version](https://img.shields.io/node/v/@kakarot-ci/core.svg)](https://nodejs.org/)
+<div align="center">
+  <img src="assets/logo.svg" alt="Kakarot CI Logo" width="200">
+  
+  # Kakarot CI
+  
+  [![npm version](https://img.shields.io/npm/v/@kakarot-ci/core.svg)](https://www.npmjs.com/package/@kakarot-ci/core)
+  [![Node.js version](https://img.shields.io/node/v/@kakarot-ci/core.svg)](https://nodejs.org/)
+</div>
 
 > AI-powered unit test generation for TypeScript and JavaScript
 
