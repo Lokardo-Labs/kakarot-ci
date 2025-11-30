@@ -38,6 +38,7 @@ describe('KakarotConfigSchema', () => {
       enableAutoCommit: false,
       commitStrategy: 'branch-pr' as const,
       enablePRComments: false,
+      enableCoverage: false,
       debug: true,
     };
 
@@ -128,6 +129,7 @@ describe('KakarotConfigSchema', () => {
     expect(result.enableAutoCommit).toBe(true);
     expect(result.commitStrategy).toBe('direct');
     expect(result.enablePRComments).toBe(true);
+    expect(result.enableCoverage).toBe(false);
     expect(result.debug).toBe(false);
   });
 });

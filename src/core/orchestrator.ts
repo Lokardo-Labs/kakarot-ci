@@ -256,8 +256,8 @@ export async function runPullRequest(context: PullRequestContext): Promise<TestG
     errors,
   };
 
-  // Run tests with coverage for final report (if tests were generated)
-  if (testFiles.size > 0) {
+  // Run tests with coverage for final report (only if enabled in config and tests were generated)
+  if (config.enableCoverage && testFiles.size > 0) {
     const testRunner = createTestRunner(framework);
     const writtenPaths = Array.from(testFiles.keys());
     
@@ -278,13 +278,13 @@ export async function runPullRequest(context: PullRequestContext): Promise<TestG
         summary.coverageReport = coverageReport;
         summary.testResults = finalTestResults;
       } else {
-        debug('Could not read coverage report (coverage package may be missing)');
+        warn('Could not read coverage report (coverage package may be missing)');
       }
     } catch (err) {
       // Coverage is optional - if it fails (e.g., missing coverage package), continue without it
       const errorMessage = err instanceof Error ? err.message : String(err);
       if (errorMessage.includes('coverage') || errorMessage.includes('MISSING DEPENDENCY')) {
-        debug(`Coverage collection skipped (missing coverage package): ${errorMessage.split('\n')[0]}`);
+        warn(`Coverage collection failed (coverage package may be missing): ${errorMessage.split('\n')[0]}`);
       } else {
         // Re-throw unexpected errors
         throw err;
@@ -435,8 +435,9 @@ async function commitTests(
 
   try {
     if (config.commitStrategy === 'branch-pr') {
-      // Create a new branch and PR
-      const branchName = `kakarot-ci/tests-pr-${pr.number}`;
+      // Create a new branch and PR with unique timestamp
+      const timestamp = Date.now();
+      const branchName = `kakarot-ci/tests-pr-${pr.number}-${timestamp}`;
       const baseSha = await githubClient.createBranch(branchName, pr.head.ref);
 
       // Commit to the new branch
