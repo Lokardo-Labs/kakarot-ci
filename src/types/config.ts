@@ -21,6 +21,7 @@ export const KakarotConfigSchema = z.object({
   enableAutoCommit: z.boolean().default(true),
   commitStrategy: z.enum(['direct', 'branch-pr']).default('direct'),
   enablePRComments: z.boolean().default(true),
+  enableCoverage: z.boolean().default(false),
   debug: z.boolean().default(false),
 });
 
