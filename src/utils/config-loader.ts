@@ -25,26 +25,11 @@ export async function findProjectRoot(startPath?: string): Promise<string> {
 export async function loadConfig(): Promise<KakarotConfig> {
   const explorer = cosmiconfig('kakarot', {
     searchPlaces: [
-      'kakarot.config.ts',
       'kakarot.config.js',
-      '.kakarot-ci.config.ts',
       '.kakarot-ci.config.js',
       '.kakarot-ci.config.json',
       'package.json',
     ],
-    loaders: {
-      '.ts': async (filepath: string) => {
-        // Dynamic import for TypeScript config file
-        // Note: This requires the file to be transpiled or use tsx/ts-node in runtime
-        try {
-          const configModule = await import(filepath);
-          return configModule.default || configModule.config || null;
-        } catch (err) {
-          error(`Failed to load TypeScript config: ${err instanceof Error ? err.message : String(err)}`);
-          return null;
-        }
-      },
-    },
   });
 
   try {
@@ -95,7 +80,7 @@ export async function loadConfig(): Promise<KakarotConfig> {
     if (err instanceof Error && err.message.includes('apiKey')) {
       error(
         'Missing required apiKey. Provide it via:\n' +
-        '  - Config file (kakarot.config.ts, .kakarot-ci.config.js/json, or package.json)\n' +
+        '  - Config file (kakarot.config.js, .kakarot-ci.config.js/json, or package.json)\n' +
         '  - Environment variable: KAKAROT_API_KEY'
       );
     }
