@@ -1,3 +1,24 @@
+# [0.7.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.6...v0.7.0) (2025-11-30)
+
+
+### Features
+
+* Making coverage a config and optional ([#23](https://github.com/Lokardo-Labs/kakarot-ci/issues/23)) ([1d16d8a](https://github.com/Lokardo-Labs/kakarot-ci/commit/1d16d8a2195a441d701d31ede748de525a43d401))
+
+## [0.6.6](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.5...v0.6.6) (2025-11-30)
+
+
+### Bug Fixes
+
+* We don't need to add every 404  ([#22](https://github.com/Lokardo-Labs/kakarot-ci/issues/22)) ([7aeb06d](https://github.com/Lokardo-Labs/kakarot-ci/commit/7aeb06d66b9e81e1fb40c2323cb2013c6528adac))
+
+## [0.6.5](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.4...v0.6.5) (2025-11-29)
+
+
+### Bug Fixes
+
+* **coverage:** Fixing coverage report handling if they are missing deps ([#21](https://github.com/Lokardo-Labs/kakarot-ci/issues/21)) ([98b6e57](https://github.com/Lokardo-Labs/kakarot-ci/commit/98b6e57b6c6f3517c9795794c802fe6dd9d8edcd))
+
 ## [0.6.4](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.3...v0.6.4) (2025-11-29)
 
 
