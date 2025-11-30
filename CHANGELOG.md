@@ -1,3 +1,10 @@
+## [0.6.5](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.4...v0.6.5) (2025-11-29)
+
+
+### Bug Fixes
+
+* **coverage:** Fixing coverage report handling if they are missing deps ([#21](https://github.com/Lokardo-Labs/kakarot-ci/issues/21)) ([98b6e57](https://github.com/Lokardo-Labs/kakarot-ci/commit/98b6e57b6c6f3517c9795794c802fe6dd9d8edcd))
+
 ## [0.6.4](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.3...v0.6.4) (2025-11-29)
 
 
