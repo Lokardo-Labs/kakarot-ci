@@ -5,7 +5,7 @@ import { debug } from './logger.js';
 /**
  * Parse unified diff format from GitHub patch
  */
-function parseUnifiedDiff(patch: string): DiffHunk[] {
+export function parseUnifiedDiff(patch: string): DiffHunk[] {
   const hunks: DiffHunk[] = [];
   const lines = patch.split('\n');
   

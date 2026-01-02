@@ -12,6 +12,7 @@ export const KakarotConfigSchema = z.object({
   fixTemperature: z.number().min(0).max(2).optional(),
   maxFixAttempts: z.number().int().min(0).max(5).default(3),
   framework: z.enum(['jest', 'vitest']),
+  mode: z.enum(['scaffold', 'full', 'pr']).default('pr'),
   testLocation: z.enum(['separate', 'co-located']).default('separate'),
   testDirectory: z.string().default('__tests__'),
   testFilePattern: z.string().default('*.test.ts'),
@@ -22,6 +23,18 @@ export const KakarotConfigSchema = z.object({
   commitStrategy: z.enum(['direct', 'branch-pr']).default('direct'),
   enablePRComments: z.boolean().default(true),
   enableCoverage: z.boolean().default(false),
+  codeStyle: z.object({
+    autoDetect: z.boolean().default(true),
+    formatGeneratedCode: z.boolean().default(true),
+    lintGeneratedCode: z.boolean().default(true),
+  }).default({}).optional(),
+  customPrompts: z.object({
+    testGeneration: z.string().optional(),
+    testScaffold: z.string().optional(),
+    testScaffoldSystem: z.string().optional(),
+    testScaffoldUser: z.string().optional(),
+    testFix: z.string().optional(),
+  }).optional(),
   debug: z.boolean().default(false),
 });
 
