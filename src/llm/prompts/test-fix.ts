@@ -82,14 +82,19 @@ Requirements:
    - Ensure mocks are properly set up
    - Verify import paths match the source file
    - Reset mocks if needed for test isolation
-7. For error testing:
+7. For async operations with fake timers:
+   - CRITICAL: Use ${framework === 'vitest' ? 'vi.advanceTimersByTimeAsync(ms)' : 'jest.advanceTimersByTimeAsync(ms)'} for async operations
+   - Await the timer advancement BEFORE awaiting the promise
+   - Example: const promise = retryWithBackoff(...); await ${framework === 'vitest' ? 'vi.advanceTimersByTimeAsync(100)' : 'jest.advanceTimersByTimeAsync(100)'}; const result = await promise;
+   - For sync operations, use ${framework === 'jest' ? 'jest.advanceTimersByTime(ms)' : 'vi.advanceTimersByTime(ms)'} (no await)
+8. For error testing:
    - Only expect errors if the function actually throws them
    - Match actual error types and messages
    - Use appropriate matchers (toThrow, rejects, etc.)
-8. Maintain the original test intent where possible, but prioritize correctness
-9. Use proper ${frameworkName} syntax
-10. Ensure all imports and dependencies are correct
-11. Fix any syntax errors, type errors, or logical errors
+9. Maintain the original test intent where possible, but prioritize correctness
+10. Use proper ${frameworkName} syntax
+11. Ensure all imports and dependencies are correct
+12. Fix any syntax errors, type errors, or logical errors
 
 Output format:
 - Return ONLY the fixed test code, no explanations or markdown code blocks

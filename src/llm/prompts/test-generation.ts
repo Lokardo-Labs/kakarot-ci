@@ -82,7 +82,11 @@ Requirements:
    - For Vitest: import { vi } from 'vitest' and use vi.useFakeTimers() in beforeEach
    - For Jest: use jest.useFakeTimers() in beforeEach
    - Always restore real timers in afterEach
-   - Use advanceTimersByTime() to advance time in tests
+   - CRITICAL: For async operations with timers, you MUST use the async timer API:
+     ${framework === 'vitest' ? 
+       '- Use vi.advanceTimersByTimeAsync(ms) for async operations - await it BEFORE awaiting the promise' :
+       '- Use jest.advanceTimersByTimeAsync(ms) for async operations - await it BEFORE awaiting the promise'}
+   - For sync operations, use ${framework === 'jest' ? 'jest.advanceTimersByTime(ms)' : 'vi.advanceTimersByTime(ms)'}
    - Example setup:
      beforeEach(() => {
        ${framework === 'jest' ? 'jest.useFakeTimers();' : 'vi.useFakeTimers();'}
@@ -90,6 +94,14 @@ Requirements:
      afterEach(() => {
        ${framework === 'jest' ? 'jest.useRealTimers();' : 'vi.useRealTimers();'}
      });
+   - Example for async with timers (CORRECT):
+     const promise = retryWithBackoff(operation, 2, 100);
+     await ${framework === 'jest' ? 'jest.advanceTimersByTimeAsync(100)' : 'vi.advanceTimersByTimeAsync(100)'};
+     const result = await promise;
+   - Example for sync with timers:
+     debouncedFunc();
+     ${framework === 'jest' ? 'jest.advanceTimersByTime(100)' : 'vi.advanceTimersByTime(100)'};
+     expect(func).toHaveBeenCalled();
 14. Test isolation:
    - Each test should be independent and not rely on other tests
    - Use beforeEach/afterEach for setup/teardown when needed
