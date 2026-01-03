@@ -438,8 +438,9 @@ async function runTestsAndFix(
           ? ((currentFileData as { _syntaxErrorAttempts?: number })._syntaxErrorAttempts || 0)
           : 0;
         
-        // If we've had too many syntax errors, revert to last valid and stop trying to fix syntax
-        if (syntaxErrorAttempts >= 3) {
+        // Don't limit syntax error attempts too aggressively - let formatter try to fix them
+        // Only revert if we've had many attempts (10+) AND we have a valid version to revert to
+        if (syntaxErrorAttempts >= 10 && lastValidContent) {
           warn(`Too many syntax error attempts (${syntaxErrorAttempts}) for ${testFile}, reverting to last valid version`);
           if (lastValidContent && lastValidContent !== currentContent) {
             currentTestFiles.set(testFile, {
@@ -499,11 +500,17 @@ async function runTestsAndFix(
         // Apply code standards to fixed code
         let formattedCode = fixedResult.testCode;
         
-        // Always format to fix syntax errors before validation
-        // This helps prevent syntax errors from being written
-        if (config.codeStyle?.formatGeneratedCode) {
+        // ALWAYS format to fix syntax errors before validation
+        // Formatting can auto-fix many syntax errors (missing braces, etc.)
+        // Even if formatting is disabled in config, we should try it for syntax fixes
+        try {
           formattedCode = await formatGeneratedCode(formattedCode, projectRoot);
-        } else {
+        } catch {
+          // If formatting fails, continue with original code
+        }
+        
+        if (!config.codeStyle?.formatGeneratedCode) {
+          // If formatting was disabled, still try import consolidation
           // Even if formatting is disabled, try to consolidate imports to prevent duplicates
           try {
             const { consolidateImports } = await import('../utils/import-consolidator.js');
