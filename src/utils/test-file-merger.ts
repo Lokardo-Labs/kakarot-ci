@@ -159,10 +159,10 @@ export function extractOtherCode(newCode: string): string {
 /**
  * Merge new test code with existing test file
  */
-export function mergeTestFiles(
+export async function mergeTestFiles(
   existingContent: string,
   newCode: string
-): string {
+): Promise<string> {
   if (!existingContent.trim()) {
     return newCode;
   }
@@ -173,14 +173,13 @@ export function mergeTestFiles(
   const otherCode = extractOtherCode(newCode);
 
   // Merge imports - consolidate imports from the same source
-  // Use a simpler approach: collect all imports, then let import-cleaner handle consolidation
-  // For now, just deduplicate exact matches
-  const allImportsSet = new Set<string>();
-  existing.imports.forEach(imp => allImportsSet.add(imp.trim()));
-  newImports.forEach(imp => allImportsSet.add(imp.trim()));
+  const allImportsList: string[] = [];
+  existing.imports.forEach(imp => allImportsList.push(imp.trim()));
+  newImports.forEach(imp => allImportsList.push(imp.trim()));
   
-  // Convert to array for sorting
-  const allImports = Array.from(allImportsSet);
+  // Consolidate imports from the same module
+  const { consolidateImports } = await import('./import-consolidator.js');
+  const allImports = consolidateImports(allImportsList);
 
   // Merge describe blocks
   const mergedDescribeBlocks = new Map<string, string>();

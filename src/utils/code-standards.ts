@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { removeUnusedImports } from './import-cleaner.js';
+import { consolidateImports } from './import-consolidator.js';
 
 export interface CodeStyleConfig {
   eslint?: {
@@ -128,12 +129,24 @@ export async function formatGeneratedCode(
   const codeStyle = await detectCodeStyle(projectRoot);
   let formatted = code;
 
-  // Remove unused imports first
+  // Consolidate and clean imports
   try {
-    formatted = removeUnusedImports(formatted);
+    // First, extract and consolidate imports
+    const importRegex = /^import\s+.*?from\s+['"].*?['"];?$/gm;
+    const imports = formatted.match(importRegex) || [];
+    const nonImportCode = formatted.replace(importRegex, '').trim();
+    
+    if (imports.length > 0) {
+      const consolidated = consolidateImports(imports);
+      // Remove unused imports from consolidated list
+      const consolidatedCode = consolidated.join('\n') + '\n\n' + nonImportCode;
+      formatted = removeUnusedImports(consolidatedCode);
+    } else {
+      formatted = removeUnusedImports(formatted);
+    }
   } catch (err) {
-    // If import removal fails, continue without it
-    console.warn(`Import cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+    // If import consolidation/removal fails, continue without it
+    console.warn(`Import consolidation/cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // Prettier takes precedence if available

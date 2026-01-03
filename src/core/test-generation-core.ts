@@ -189,7 +189,7 @@ export async function generateTestsFromTargets(
         if (baseContent) {
           // Merge with existing file
           const { mergeTestFiles } = await import('../utils/test-file-merger.js');
-          fileData = { content: mergeTestFiles(baseContent, formattedCode), targets: [] };
+          fileData = { content: await mergeTestFiles(baseContent, formattedCode), targets: [] };
         } else {
           fileData = { content: formattedCode, targets: [] };
         }
@@ -198,7 +198,7 @@ export async function generateTestsFromTargets(
       } else {
         // Merge new code with accumulated content
         const { mergeTestFiles } = await import('../utils/test-file-merger.js');
-        const mergedContent = mergeTestFiles(fileData.content, formattedCode);
+        const mergedContent = await mergeTestFiles(fileData.content, formattedCode);
         
         // Validate merged content before storing (basic syntax check)
         const syntaxCheck = checkSyntaxCompleteness(mergedContent);
@@ -498,9 +498,27 @@ async function runTestsAndFix(
 
         // Apply code standards to fixed code
         let formattedCode = fixedResult.testCode;
+        
+        // Always format to fix syntax errors before validation
+        // This helps prevent syntax errors from being written
         if (config.codeStyle?.formatGeneratedCode) {
           formattedCode = await formatGeneratedCode(formattedCode, projectRoot);
+        } else {
+          // Even if formatting is disabled, try to consolidate imports to prevent duplicates
+          try {
+            const { consolidateImports } = await import('../utils/import-consolidator.js');
+            const importRegex = /^import\s+.*?from\s+['"].*?['"];?$/gm;
+            const imports = formattedCode.match(importRegex) || [];
+            if (imports.length > 0) {
+              const consolidated = consolidateImports(imports);
+              const nonImportCode = formattedCode.replace(importRegex, '').trim();
+              formattedCode = consolidated.join('\n') + '\n\n' + nonImportCode;
+            }
+          } catch {
+            // If consolidation fails, continue with original code
+          }
         }
+        
         if (config.codeStyle?.lintGeneratedCode) {
           formattedCode = await lintGeneratedCode(formattedCode, projectRoot);
         }

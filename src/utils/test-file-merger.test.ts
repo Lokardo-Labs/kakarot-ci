@@ -43,7 +43,7 @@ describe('test-file-merger', () => {
   });
 
   describe('mergeTestFiles', () => {
-    it('should merge imports without exact duplicates', () => {
+    it('should merge imports without exact duplicates', async () => {
       const existing = `
         import { describe, it, expect } from 'vitest';
         import { func1 } from './utils';
@@ -54,7 +54,7 @@ describe('test-file-merger', () => {
         import { func2 } from './utils';
       `;
       
-      const merged = mergeTestFiles(existing, newCode);
+      const merged = await mergeTestFiles(existing, newCode);
       
       // Should have both imports
       expect(merged).toContain("from 'vitest'");
@@ -64,7 +64,7 @@ describe('test-file-merger', () => {
       expect(exactVitestImports).toBeLessThanOrEqual(2); // May have 2 if different (one with vi, one without)
     });
 
-    it('should merge describe blocks for same class', () => {
+    it('should merge describe blocks for same class', async () => {
       const existing = `
         import { describe, it, expect } from 'vitest';
         describe('DataProcessor', () => {
@@ -79,7 +79,7 @@ describe('test-file-merger', () => {
         });
       `;
       
-      const merged = mergeTestFiles(existing, newCode);
+      const merged = await mergeTestFiles(existing, newCode);
       
       // Should have only one DataProcessor describe block
       const describeCount = (merged.match(/describe\s*\(\s*['"]DataProcessor['"]/g) || []).length;
@@ -89,7 +89,7 @@ describe('test-file-merger', () => {
       expect(merged).toContain('should clear cache');
     });
 
-    it('should add new describe blocks for different functions', () => {
+    it('should add new describe blocks for different functions', async () => {
       const existing = `
         import { describe, it, expect } from 'vitest';
         describe('func1', () => {
@@ -104,14 +104,14 @@ describe('test-file-merger', () => {
         });
       `;
       
-      const merged = mergeTestFiles(existing, newCode);
+      const merged = await mergeTestFiles(existing, newCode);
       
       // Should have both describe blocks
       expect(merged).toContain("describe('func1'");
       expect(merged).toContain("describe('func2'");
     });
 
-    it('should handle empty existing file', () => {
+    it('should handle empty existing file', async () => {
       const existing = '';
       const newCode = `
         import { describe, it, expect } from 'vitest';
@@ -120,11 +120,11 @@ describe('test-file-merger', () => {
         });
       `;
       
-      const merged = mergeTestFiles(existing, newCode);
+      const merged = await mergeTestFiles(existing, newCode);
       expect(merged).toContain("describe('test'");
     });
 
-    it('should preserve existing structure', () => {
+    it('should preserve existing structure', async () => {
       const existing = `
         import { describe, it, expect, vi } from 'vitest';
         import { helper } from './helper';
@@ -141,7 +141,7 @@ describe('test-file-merger', () => {
         });
       `;
       
-      const merged = mergeTestFiles(existing, newCode);
+      const merged = await mergeTestFiles(existing, newCode);
       
       // Should preserve helper import
       expect(merged).toContain("from './helper'");
