@@ -5,6 +5,7 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { simpleGit } from 'simple-git';
+import { minimatch } from 'minimatch';
 import type { KakarotConfig } from '../types/config.js';
 import type { ChangedRange } from '../types/diff.js';
 import { getChangedRanges } from './diff-parser.js';
@@ -32,8 +33,6 @@ export async function extractLocalTestTargets(
     ...status.renamed.map(r => r.to),
   ].filter(file => {
     // Filter by include/exclude patterns
-    const { minimatch } = require('minimatch');
-    
     // Check exclude patterns first
     for (const pattern of config.excludePatterns) {
       if (minimatch(file, pattern)) {
