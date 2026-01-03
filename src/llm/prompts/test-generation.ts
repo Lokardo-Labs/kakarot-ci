@@ -70,9 +70,13 @@ Requirements:
    - Instantiate the class: const instance = new ClassName()
    - Call methods on the instance: instance.methodName()
    - NEVER try to import methods directly: import { methodName } from './file' (WRONG for class methods)
-   - NEVER access private properties directly - test through public methods only
-   - If a property is private, do NOT try to set it directly (e.g., instance.privateProp = value)
-   - Use constructor parameters or public methods to set up test state
+   - CRITICAL: NEVER access private properties directly - this will cause TypeScript compilation errors
+   - If a property is marked 'private' in the class, you CANNOT access it: instance.privateProp = value (WRONG)
+   - If a property is marked 'private', you CANNOT read it: const value = instance.privateProp (WRONG)
+   - Test through public methods only - use constructor parameters or public setters/getters
+   - Example of WRONG: dataProcessor.cache = new Map() or dataProcessor.maxCacheSize = 3
+   - Example of CORRECT: const processor = new DataProcessor(3) or processor.setCacheSize(3) if such methods exist
+   - If you need to test private state, test it indirectly through public methods that use that state
 13. Fake timers (for debounce, throttle, setTimeout, setInterval):
    - If the function uses setTimeout, setInterval, debounce, or throttle, you MUST use fake timers
    - For Vitest: import { vi } from 'vitest' and use vi.useFakeTimers() in beforeEach
@@ -92,8 +96,10 @@ Requirements:
    - Don't share mutable state between tests
 15. Avoid duplicates:
    - Check existing test file structure to avoid duplicate describe blocks
-   - If a test suite already exists, add to it rather than creating a new one
+   - If a test suite already exists (e.g., describe('DataProcessor')), add to it rather than creating a new one
    - Consolidate related tests into the same describe block
+   - Only create ONE describe block per class/function - merge tests into existing blocks
+   - If you see multiple describe('ClassName') blocks, consolidate them into one
 16. Use descriptive test names that explain what is being tested
 17. Follow the existing test file structure if one exists
 
@@ -153,9 +159,16 @@ function buildUserPrompt(
   }
   
   if (target.classPrivateProperties && target.classPrivateProperties.length > 0) {
-    prompt += `WARNING: The class has private properties: ${target.classPrivateProperties.join(', ')}\n`;
-    prompt += `- DO NOT access these directly in tests (e.g., instance.privateProp = value)\n`;
-    prompt += `- Test through public methods or constructor parameters only\n`;
+    prompt += `\n⚠️ CRITICAL: The class has PRIVATE properties: ${target.classPrivateProperties.join(', ')}\n`;
+    prompt += `These properties are marked 'private' in TypeScript and CANNOT be accessed in tests.\n`;
+    prompt += `\nDO NOT DO THIS (will cause TypeScript errors):\n`;
+    prompt += `  instance.${target.classPrivateProperties[0]} = value;  // ❌ WRONG - private property\n`;
+    prompt += `  const val = instance.${target.classPrivateProperties[0]};  // ❌ WRONG - private property\n`;
+    prompt += `\nDO THIS INSTEAD:\n`;
+    prompt += `  - Use constructor parameters: const instance = new ${target.className}(value);\n`;
+    prompt += `  - Use public methods if available: instance.setProperty(value);\n`;
+    prompt += `  - Test indirectly through public methods that use the private property\n`;
+    prompt += `  - Only test what is accessible through the public API\n\n`;
   }
   
   prompt += '\n';
@@ -211,7 +224,12 @@ function buildUserPrompt(
   if (target.functionType === 'class-method') {
     prompt += `- This is a CLASS METHOD - import the class, instantiate it, and call the method on the instance\n`;
     prompt += `- DO NOT import the method as a standalone function\n`;
-    prompt += `- DO NOT access private properties directly\n`;
+    prompt += `- CRITICAL: DO NOT access private properties directly - TypeScript will reject this at compile time\n`;
+    if (target.classPrivateProperties && target.classPrivateProperties.length > 0) {
+      prompt += `- The following properties are PRIVATE and cannot be accessed: ${target.classPrivateProperties.join(', ')}\n`;
+      prompt += `- Instead of: instance.${target.classPrivateProperties[0]} = value\n`;
+      prompt += `- Use: const instance = new ${target.className}(value) or public methods\n`;
+    }
   }
   prompt += `- If the function is async, use async/await in tests and test both success and error cases\n`;
   prompt += `- If the function uses external dependencies (imports), mock them appropriately\n`;

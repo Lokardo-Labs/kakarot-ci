@@ -119,8 +119,14 @@ function buildUserPrompt(
   }
   
   if (target.classPrivateProperties && target.classPrivateProperties.length > 0) {
-    prompt += `WARNING: The class has private properties: ${target.classPrivateProperties.join(', ')}\n`;
-    prompt += `- DO NOT access these directly in tests\n`;
+    prompt += `\n⚠️ CRITICAL: The class has PRIVATE properties: ${target.classPrivateProperties.join(', ')}\n`;
+    prompt += `These properties are marked 'private' in TypeScript and CANNOT be accessed in tests.\n`;
+    prompt += `\nDO NOT DO THIS (will cause TypeScript errors):\n`;
+    prompt += `  instance.${target.classPrivateProperties[0]} = value;  // ❌ WRONG - private property\n`;
+    prompt += `\nDO THIS INSTEAD:\n`;
+    prompt += `  - Use constructor parameters: const instance = new ${target.className}(value);\n`;
+    prompt += `  - Use public methods if available\n`;
+    prompt += `  - Only test what is accessible through the public API\n\n`;
   }
   
   prompt += '\n';

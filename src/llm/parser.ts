@@ -132,3 +132,43 @@ export function validateTestCodeStructure(code: string, framework: 'jest' | 'vit
   };
 }
 
+/**
+ * Validate test code for private property access and other issues
+ * This is a separate validation that can be run when class information is available
+ */
+export function validateTestCodeForPrivateAccess(
+  code: string,
+  privateProperties?: string[]
+): {
+  valid: boolean;
+  errors: string[];
+} {
+  const errors: string[] = [];
+
+  if (!privateProperties || privateProperties.length === 0) {
+    return { valid: true, errors: [] };
+  }
+
+  // Check for direct access to private properties
+  // Pattern: instance.propertyName or this.propertyName
+  for (const prop of privateProperties) {
+    // Match patterns like: instance.cache, dataProcessor.maxCacheSize, this.cache
+    const privateAccessPattern = new RegExp(
+      `(?:\\w+\\.|this\\.)${prop.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[=;]`,
+      'g'
+    );
+    
+    if (privateAccessPattern.test(code)) {
+      errors.push(
+        `Invalid: Attempting to access private property '${prop}' directly. ` +
+        `Private properties cannot be accessed in tests. Test through public methods or constructor parameters instead.`
+      );
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+}
+

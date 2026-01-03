@@ -19,6 +19,8 @@ export const KakarotConfigSchema = z.object({
   includePatterns: z.array(z.string()).default(['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx']),
   excludePatterns: z.array(z.string()).default(['**/*.test.ts', '**/*.spec.ts', '**/*.test.js', '**/*.spec.js', '**/node_modules/**']),
   maxTestsPerPR: z.number().int().min(1).default(50),
+  requestDelay: z.number().int().min(0).max(60000).default(0).optional(), // Delay between requests in ms
+  maxRetries: z.number().int().min(0).max(10).default(3).optional(), // Max retries for rate limits
   enableAutoCommit: z.boolean().default(true),
   commitStrategy: z.enum(['direct', 'branch-pr']).default('direct'),
   commitMessageTemplate: z.string().optional(),
