@@ -1,3 +1,10 @@
+## [0.10.6](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.5...v0.10.6) (2026-01-03)
+
+
+### Bug Fixes
+
+* Adding in a fix for the syntax issues ([#41](https://github.com/Lokardo-Labs/kakarot-ci/issues/41)) ([f0ba94e](https://github.com/Lokardo-Labs/kakarot-ci/commit/f0ba94e1c44340efb6ad42efd44fb5f8f05f1657))
+
 ## [0.10.5](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.4...v0.10.5) (2026-01-03)
 
 
