@@ -3,6 +3,7 @@ import { simpleGit } from 'simple-git';
 import gitUrlParse from 'git-url-parse';
 import { Command } from 'commander';
 import { runPullRequest, type PullRequestContext } from '../core/orchestrator.js';
+import { runLocal } from '../core/local-orchestrator.js';
 import { error, info, debug } from '../utils/logger.js';
 import { loadConfig } from '../utils/config-loader.js';
 import { findProjectRoot } from '../utils/config-loader.js';
@@ -111,15 +112,23 @@ async function main(): Promise<void> {
 
   program
     .name('kakarot-ci')
-    .description('AI-powered unit test generation for pull requests')
+    .description('AI-powered unit test generation for pull requests and local development')
     .version('0.2.0')
-    .option('--pr <number>', 'Pull request number')
+    .option('--mode <mode>', 'Execution mode: pr (default), scaffold, or full', 'pr')
+    .option('--pr <number>', 'Pull request number (required for pr mode)')
     .option('--owner <string>', 'Repository owner')
     .option('--repo <string>', 'Repository name')
     .option('--token <string>', 'GitHub token (or use GITHUB_TOKEN env var)')
     .parse(process.argv);
 
   const options = program.opts();
+  const mode = (options.mode || 'pr') as 'pr' | 'scaffold' | 'full';
+
+  // Validate mode
+  if (!['pr', 'scaffold', 'full'].includes(mode)) {
+    error(`Invalid mode: ${mode}. Must be one of: pr, scaffold, full`);
+    process.exit(1);
+  }
 
   // Load config first to get defaults
   let config;
@@ -130,6 +139,36 @@ async function main(): Promise<void> {
     config = null;
   }
 
+  // Override config mode with CLI mode
+  if (config && mode !== 'pr') {
+    config.mode = mode;
+  }
+
+  // For local modes (scaffold/full), use runLocal
+  if (mode === 'scaffold' || mode === 'full') {
+    info(`Starting Kakarot CI in ${mode} mode`);
+
+    try {
+      const summary = await runLocal({ mode });
+
+      // Exit with error code if there were failures
+      if (summary.errors.length > 0 || summary.testsFailed > 0) {
+        error(`Test generation completed with errors: ${summary.errors.length} error(s), ${summary.testsFailed} test(s) failed`);
+        process.exit(1);
+      }
+
+      info(`Test generation completed successfully: ${summary.testsGenerated} test(s) generated`);
+      process.exit(0);
+    } catch (err) {
+      error(`Fatal error: ${err instanceof Error ? err.message : String(err)}`);
+      if (err instanceof Error && err.stack) {
+        error(err.stack);
+      }
+      process.exit(1);
+    }
+  }
+
+  // For PR mode, continue with existing logic
   // Parse environment variables (with CLI args as highest priority, then config, then env)
   const githubRepository = process.env.GITHUB_REPOSITORY;
   const githubEventPath = process.env.GITHUB_EVENT_PATH;

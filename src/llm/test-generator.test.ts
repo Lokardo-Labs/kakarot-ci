@@ -16,6 +16,12 @@ vi.mock('./prompts/test-fix.js', () => ({
     { role: 'user', content: 'user' },
   ]),
 }));
+vi.mock('./prompts/test-scaffold.js', () => ({
+  buildTestScaffoldPrompt: vi.fn().mockResolvedValue([
+    { role: 'system', content: 'system' },
+    { role: 'user', content: 'user' },
+  ]),
+}));
 vi.mock('./parser.js', () => ({
   parseTestCode: vi.fn((code) => code),
   validateTestCodeStructure: vi.fn(() => ({ valid: true, errors: [] })),
@@ -132,6 +138,30 @@ describe('TestGenerator', () => {
       temperature: 0.3,
       maxTokens: 500,
     });
+  });
+
+  it('should generate test scaffold', async () => {
+    generator = new TestGenerator({
+      apiKey: 'test-key',
+      provider: 'openai',
+      maxFixAttempts: 3,
+    });
+
+    const target = {
+      filePath: 'src/utils.ts',
+      functionName: 'add',
+      functionType: 'function' as const,
+      code: 'export function add() {}',
+      context: '',
+      startLine: 1,
+      endLine: 1,
+      changedRanges: [],
+    };
+
+    const result = await generator.generateTestScaffold(target, undefined, 'jest');
+
+    expect(result.testCode).toBe('test code');
+    expect(mockProvider.generate).toHaveBeenCalled();
   });
 
   it('should handle generation errors', async () => {

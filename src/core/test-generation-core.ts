@@ -1,0 +1,396 @@
+/**
+ * Core test generation logic shared between PR and local modes
+ */
+
+import type { KakarotConfig } from '../types/config.js';
+import type { TestTarget } from '../types/diff.js';
+import { TestGenerator } from '../llm/test-generator.js';
+import { getTestFilePath } from '../utils/test-file-path.js';
+import { detectPackageManager } from '../utils/package-manager-detector.js';
+import { createTestRunner } from '../utils/test-runner/factory.js';
+import { writeTestFiles } from '../utils/test-file-writer.js';
+import { readCoverageReport } from '../utils/coverage-reader.js';
+import type { CoverageDelta } from '../types/coverage.js';
+import { formatGeneratedCode, lintGeneratedCode } from '../utils/code-standards.js';
+import { findProjectRoot } from '../utils/config-loader.js';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+import { info, error, warn, success, progress } from '../utils/logger.js';
+import type { TestResult } from '../types/test-runner.js';
+import type { CoverageReport } from '../types/coverage.js';
+
+export interface TestGenerationOptions {
+  targets: TestTarget[];
+  config: KakarotConfig;
+  mode: 'pr' | 'scaffold' | 'full';
+  getExistingTestFile?: (testFilePath: string) => Promise<string | undefined>;
+}
+
+/**
+ * Map test file paths to their original function targets
+ */
+interface TestFileToTargetsMap {
+  [testFilePath: string]: TestTarget[];
+}
+
+export interface TestGenerationResult {
+  targetsProcessed: number;
+  testsGenerated: number;
+  testsFailed: number;
+  testFiles: Array<{
+    path: string;
+    targets: string[];
+  }>;
+  errors: Array<{
+    target: string;
+    error: string;
+  }>;
+  coverageReport?: CoverageReport;
+  coverageDelta?: CoverageDelta;
+  testResults?: TestResult[];
+  finalTestFiles: Map<string, { content: string; targets: string[] }>;
+}
+
+/**
+ * Core test generation logic - shared between PR and local modes
+ */
+export async function generateTestsFromTargets(
+  options: TestGenerationOptions
+): Promise<TestGenerationResult> {
+  const { targets, config, mode, getExistingTestFile } = options;
+
+  if (targets.length === 0) {
+    return {
+      targetsProcessed: 0,
+      testsGenerated: 0,
+      testsFailed: 0,
+      testFiles: [],
+      errors: [],
+      finalTestFiles: new Map(),
+    };
+  }
+
+  // Limit targets based on config
+  const limitedTargets = targets.slice(0, config.maxTestsPerPR);
+  
+  if (targets.length > limitedTargets.length) {
+    warn(`Limited to ${limitedTargets.length} target(s) (maxTestsPerPR: ${config.maxTestsPerPR})`);
+  }
+
+  info(`Processing ${limitedTargets.length} test target(s)`);
+
+  // Initialize test generator
+  const testGenerator = new TestGenerator(config);
+  const framework = config.framework;
+  const projectRoot = await findProjectRoot();
+
+  // Generate tests
+  const testFiles = new Map<string, { content: string; targets: string[] }>();
+  const testFileToTargetsMap: TestFileToTargetsMap = {}; // Map test files to their original targets
+  let testsGenerated = 0;
+  let testsFailed = 0;
+  const errors: Array<{ target: string; error: string }> = [];
+
+  for (let i = 0; i < limitedTargets.length; i++) {
+    const target = limitedTargets[i];
+    progress(i + 1, limitedTargets.length, `Generating test for ${target.functionName}`);
+
+    try {
+      const testFilePath = getTestFilePath(target, config);
+      
+      // Get existing test file content
+      let existingContent: string | undefined;
+      if (getExistingTestFile) {
+        existingContent = await getExistingTestFile(testFilePath);
+      } else {
+        // Default: check filesystem
+        const fullTestPath = join(projectRoot, testFilePath);
+        if (existsSync(fullTestPath)) {
+          existingContent = readFileSync(fullTestPath, 'utf-8');
+        }
+      }
+
+      let result;
+      if (mode === 'scaffold') {
+        result = await testGenerator.generateTestScaffold(target, existingContent, framework);
+      } else {
+        result = await testGenerator.generateTest({
+          target: {
+            filePath: target.filePath,
+            functionName: target.functionName,
+            functionType: target.functionType,
+            code: target.code,
+            context: target.context,
+          },
+          framework,
+          existingTestFile: existingContent,
+        });
+      }
+
+      // Apply code standards if enabled
+      let formattedCode = result.testCode;
+      if (config.codeStyle?.formatGeneratedCode) {
+        formattedCode = await formatGeneratedCode(formattedCode, projectRoot);
+      }
+
+      if (config.codeStyle?.lintGeneratedCode) {
+        formattedCode = await lintGeneratedCode(formattedCode, projectRoot);
+      }
+
+      // Store test file
+      let fileData = testFiles.get(testFilePath);
+      if (!fileData) {
+        fileData = { content: formattedCode, targets: [] };
+        testFiles.set(testFilePath, fileData);
+        testFileToTargetsMap[testFilePath] = [];
+      } else {
+        // Append with separator if base content exists
+        if (fileData.content && existingContent) {
+          fileData.content += '\n\n' + formattedCode;
+        } else {
+          fileData.content = formattedCode;
+        }
+      }
+      
+      fileData.targets.push(target.functionName);
+      testFileToTargetsMap[testFilePath].push(target); // Store full target for fix loop
+      testsGenerated++;
+
+      info(`✓ Generated test for ${target.functionName}`);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      error(`✗ Failed to generate test for ${target.functionName}: ${errorMessage}`);
+      errors.push({
+        target: `${target.filePath}:${target.functionName}`,
+        error: errorMessage,
+      });
+      testsFailed++;
+    }
+  }
+
+  // Write tests to disk and run them (only in full mode)
+  const packageManager = detectPackageManager(projectRoot);
+  info(`Detected package manager: ${packageManager}`);
+
+  let finalTestFiles = testFiles;
+
+  if (testFiles.size > 0) {
+    // Write test files to disk
+    const writtenPaths = writeTestFiles(testFiles, projectRoot);
+    info(`Wrote ${writtenPaths.length} test file(s) to disk`);
+
+    // Only run tests in full mode
+    if (mode === 'full') {
+      const testRunner = createTestRunner(framework);
+      finalTestFiles = await runTestsAndFix(
+        testRunner,
+        testFiles,
+        writtenPaths,
+        framework,
+        packageManager,
+        projectRoot,
+        testGenerator,
+        config.maxFixAttempts,
+        config,
+        testFileToTargetsMap
+      );
+    }
+  }
+
+  // Initialize result
+  const result: TestGenerationResult = {
+    targetsProcessed: limitedTargets.length,
+    testsGenerated,
+    testsFailed,
+    testFiles: Array.from(finalTestFiles.entries()).map(([path, data]) => ({
+      path,
+      targets: data.targets,
+    })),
+    errors,
+    finalTestFiles,
+  };
+
+  // Run tests with coverage for final report (only if enabled in config and tests were generated, and in full mode)
+  if (mode === 'full' && config.enableCoverage && finalTestFiles.size > 0) {
+    const testRunner = createTestRunner(framework);
+    const writtenPaths = Array.from(finalTestFiles.keys());
+    
+    try {
+      // Get baseline coverage before running new tests (if coverage report exists)
+      const baselineCoverage = readCoverageReport(projectRoot, framework);
+      
+      info('Running tests with coverage...');
+      const finalTestResults = await testRunner.runTests({
+        testFiles: writtenPaths,
+        framework,
+        packageManager,
+        projectRoot,
+        coverage: true,
+      });
+
+      // Read coverage report after running tests
+      const coverageReport = readCoverageReport(projectRoot, framework);
+      if (coverageReport) {
+        info(`Coverage collected: ${coverageReport.total.lines.percentage.toFixed(1)}% lines`);
+        result.coverageReport = coverageReport;
+        result.testResults = finalTestResults;
+        
+        // Calculate coverage delta if baseline exists
+        if (baselineCoverage) {
+          const delta = calculateCoverageDelta(baselineCoverage, coverageReport);
+          result.coverageDelta = delta;
+          info(`Coverage delta: +${delta.lines.toFixed(1)}% lines, +${delta.functions.toFixed(1)}% functions`);
+        }
+      } else {
+        warn('Could not read coverage report (coverage package may be missing)');
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (errorMessage.includes('coverage') || errorMessage.includes('MISSING DEPENDENCY')) {
+        warn(`Coverage collection failed (coverage package may be missing): ${errorMessage.split('\n')[0]}`);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  success(`Completed: ${testsGenerated} test(s) generated, ${testsFailed} failed`);
+
+  return result;
+}
+
+/**
+ * Run tests and fix failures in a loop
+ */
+async function runTestsAndFix(
+  testRunner: ReturnType<typeof createTestRunner>,
+  testFiles: Map<string, { content: string; targets: string[] }>,
+  testFilePaths: string[],
+  framework: 'jest' | 'vitest',
+  packageManager: 'npm' | 'yarn' | 'pnpm',
+  projectRoot: string,
+  testGenerator: TestGenerator,
+  maxFixAttempts: number,
+  config: KakarotConfig,
+  testFileToTargetsMap: TestFileToTargetsMap
+): Promise<Map<string, { content: string; targets: string[] }>> {
+  
+  let attempt = 0;
+  const currentTestFiles = new Map(testFiles);
+
+  while (attempt < maxFixAttempts) {
+    info(`Running tests (attempt ${attempt + 1}/${maxFixAttempts})`);
+
+    // Run tests
+    const results = await testRunner.runTests({
+      testFiles: testFilePaths,
+      framework,
+      packageManager,
+      projectRoot,
+      coverage: false,
+    });
+
+    // Check if all tests passed
+    const allPassed = results.every(r => r.success);
+    if (allPassed) {
+      success(`All tests passed on attempt ${attempt + 1}`);
+      return currentTestFiles;
+    }
+
+    // Find failing tests
+    const failures: Array<{ testFile: string; result: TestResult }> = [];
+    for (const result of results) {
+      if (!result.success && result.failures.length > 0) {
+        failures.push({ testFile: result.testFile, result });
+      }
+    }
+
+    info(`Found ${failures.length} failing test file(s), attempting fixes...`);
+
+    // Fix each failing test file
+    let fixedAny = false;
+    for (const { testFile, result } of failures) {
+      try {
+        const currentContent = currentTestFiles.get(testFile)?.content;
+        if (!currentContent) {
+          continue;
+        }
+
+        // Get original function code from targets
+        const targets = testFileToTargetsMap[testFile] || [];
+        // Use the first target's code as the original code (or combine if multiple)
+        const originalCode = targets.length > 0 
+          ? targets.map(t => `${t.functionName}:\n${t.code}`).join('\n\n')
+          : currentContent; // Fallback to test code if no targets found
+        
+        const errorMessages = result.failures.map(f => f.message).join('\n');
+        const testOutput = result.failures.map(f => f.message).join('\n');
+
+        const fixedResult = await testGenerator.fixTest({
+          testCode: currentContent,
+          errorMessage: errorMessages,
+          testOutput,
+          originalCode,
+          framework,
+          attempt: attempt + 1,
+          maxAttempts: maxFixAttempts,
+        });
+
+        // Apply code standards to fixed code
+        let formattedCode = fixedResult.testCode;
+        if (config.codeStyle?.formatGeneratedCode) {
+          formattedCode = await formatGeneratedCode(formattedCode, projectRoot);
+        }
+        if (config.codeStyle?.lintGeneratedCode) {
+          formattedCode = await lintGeneratedCode(formattedCode, projectRoot);
+        }
+
+        currentTestFiles.set(testFile, {
+          content: formattedCode,
+          targets: currentTestFiles.get(testFile)!.targets,
+        });
+
+        // Update file on disk
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const fullPath = path.join(projectRoot, testFile);
+        await fs.writeFile(fullPath, formattedCode, 'utf-8');
+
+        fixedAny = true;
+        info(`✓ Fixed test file: ${testFile}`);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        warn(`Failed to fix test file ${testFile}: ${errorMessage}`);
+      }
+    }
+
+    if (!fixedAny) {
+      warn('No fixes could be applied, stopping fix attempts');
+      break;
+    }
+
+    attempt++;
+  }
+
+  if (attempt >= maxFixAttempts) {
+    warn(`Reached maximum fix attempts (${maxFixAttempts}), some tests may still be failing`);
+  }
+
+  return currentTestFiles;
+}
+
+/**
+ * Calculate coverage delta between baseline and current coverage
+ */
+function calculateCoverageDelta(
+  baseline: CoverageReport,
+  current: CoverageReport
+): CoverageDelta {
+  return {
+    lines: current.total.lines.percentage - baseline.total.lines.percentage,
+    branches: current.total.branches.percentage - baseline.total.branches.percentage,
+    functions: current.total.functions.percentage - baseline.total.functions.percentage,
+    statements: current.total.statements.percentage - baseline.total.statements.percentage,
+  };
+}
+

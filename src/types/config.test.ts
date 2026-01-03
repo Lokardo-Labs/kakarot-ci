@@ -29,6 +29,7 @@ describe('KakarotConfigSchema', () => {
       fixTemperature: 0.1,
       maxFixAttempts: 5,
       framework: 'vitest' as const,
+      mode: 'pr' as const,
       testLocation: 'co-located' as const,
       testDirectory: 'tests',
       testFilePattern: '*.spec.ts',
@@ -121,6 +122,7 @@ describe('KakarotConfigSchema', () => {
     const result = KakarotConfigSchema.parse(config);
 
     expect(result.maxFixAttempts).toBe(3);
+    expect(result.mode).toBe('pr');
     expect(result.testLocation).toBe('separate');
     expect(result.testDirectory).toBe('__tests__');
     expect(result.testFilePattern).toBe('*.test.ts');
@@ -131,6 +133,27 @@ describe('KakarotConfigSchema', () => {
     expect(result.enablePRComments).toBe(true);
     expect(result.enableCoverage).toBe(false);
     expect(result.debug).toBe(false);
+  });
+
+  it('should validate mode options', () => {
+    const config = {
+      apiKey: 'test-api-key',
+      framework: 'jest' as const,
+      mode: 'scaffold' as const,
+    };
+
+    const result = KakarotConfigSchema.parse(config);
+    expect(result.mode).toBe('scaffold');
+  });
+
+  it('should reject invalid mode', () => {
+    const config = {
+      apiKey: 'test-api-key',
+      framework: 'jest' as const,
+      mode: 'invalid',
+    } as { apiKey: string; framework: 'jest'; mode: string };
+
+    expect(() => KakarotConfigSchema.parse(config)).toThrow();
   });
 });
 
