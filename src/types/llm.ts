@@ -36,9 +36,14 @@ export interface TestGenerationContext {
     functionType: 'function' | 'method' | 'arrow-function' | 'class-method';
     code: string;
     context: string;
+    className?: string;
+    isPrivate?: boolean;
+    classPrivateProperties?: string[];
   };
   framework: 'jest' | 'vitest';
   existingTestFile?: string;
+  testFilePath?: string;
+  importPath?: string;
   relatedFunctions?: Array<{
     name: string;
     code: string;

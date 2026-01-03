@@ -42,8 +42,13 @@ export function buildTestFixPrompt(context: TestFixContext): LLMMessage[] {
 
 function buildSystemPrompt(framework: 'jest' | 'vitest', attempt: number, maxAttempts: number): string {
   const frameworkName = framework === 'jest' ? 'Jest' : 'Vitest';
+  const importStatement = framework === 'jest' 
+    ? "import { describe, it, expect } from 'jest';" 
+    : "import { describe, it, expect } from 'vitest';";
 
   return `You are an expert ${frameworkName} test debugger. Your task is to fix failing unit tests.
+
+FRAMEWORK RESTRICTION: You MUST use ${frameworkName} ONLY. This tool ONLY supports Jest and Vitest. Do NOT use any other test framework syntax.
 
 Context:
 - This is fix attempt ${attempt} of ${maxAttempts}
@@ -51,6 +56,11 @@ Context:
 - You need to analyze the error and fix the test code
 
 CRITICAL: Tests must match the ACTUAL behavior of the code being tested, not assumed behavior.
+
+CRITICAL SYNTAX: Use ONLY ${frameworkName} syntax:
+- Import: ${importStatement}
+- Use describe() and it() as direct function calls
+- NEVER use test.describe() or test.xxx() - those are NOT ${frameworkName} syntax
 
 Requirements:
 1. Analyze the original function code to understand its ACTUAL runtime behavior

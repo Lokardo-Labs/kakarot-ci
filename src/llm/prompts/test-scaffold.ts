@@ -17,13 +17,15 @@ export async function buildTestScaffoldPrompt(
   target: TestGenerationContext['target'],
   framework: 'jest' | 'vitest',
   existingTestFile?: string,
-  options?: ScaffoldPromptOptions
+  options?: ScaffoldPromptOptions,
+  testFilePath?: string,
+  importPath?: string
 ): Promise<LLMMessage[]> {
   const systemPrompt = options?.customSystemPrompt 
     ? await loadCustomPrompt(options.customSystemPrompt, buildSystemPrompt(framework))
     : buildSystemPrompt(framework);
   
-  const baseUserPrompt = buildUserPrompt(target, framework, existingTestFile);
+  const baseUserPrompt = buildUserPrompt(target, framework, existingTestFile, testFilePath, importPath);
   const userPrompt = options?.customUserPrompt
     ? await loadCustomPrompt(options.customUserPrompt, baseUserPrompt)
     : baseUserPrompt;
@@ -36,15 +38,28 @@ export async function buildTestScaffoldPrompt(
 
 function buildSystemPrompt(framework: 'jest' | 'vitest'): string {
   const frameworkName = framework === 'jest' ? 'Jest' : 'Vitest';
+  const importStatement = framework === 'jest' 
+    ? "import { describe, it } from 'jest';" 
+    : "import { describe, it } from 'vitest';";
   
   return `You are a test scaffolding assistant. Your task is to generate minimal test file structure with placeholder tests for TypeScript/JavaScript functions.
 
+FRAMEWORK RESTRICTION: You MUST use ${frameworkName} ONLY. This tool ONLY supports Jest and Vitest. Do NOT use any other test framework syntax.
+
 Framework: ${frameworkName}
+
+CRITICAL SYNTAX REQUIREMENTS:
+- For ${frameworkName}, use: ${importStatement}
+- Use describe() and it() functions directly as standalone functions
+- ${frameworkName} syntax: describe('FunctionName', () => { it('test case', () => { ... }); });
+- NEVER use test.describe() or test.xxx() - this is NOT ${frameworkName} syntax
+- NEVER use test() as a method call on an object (e.g., test.describe, test.it)
+- ONLY use: describe() and it() as direct function calls
 
 Requirements:
 1. Generate ONLY the basic test structure, not full implementations
 2. Use ${frameworkName} syntax and best practices
-3. Include proper imports
+3. Include proper imports: ${importStatement}
 4. Create describe blocks for the function
 5. Create it blocks with TODO comments describing what should be tested
 6. Do NOT write actual test implementations
@@ -55,19 +70,60 @@ Requirements:
 Output format:
 - Return ONLY the test code, no explanations or markdown code blocks
 - The code should be ready to use as a scaffold for manual test writing
-- Use TODO comments to indicate what tests need to be written`;
+- Use TODO comments to indicate what tests need to be written
+
+${frameworkName} example structure:
+${importStatement}
+
+describe('FunctionName', () => {
+  it('should handle normal case', () => {
+    // TODO: implement test
+  });
+
+  it('should handle edge case', () => {
+    // TODO: implement test
+  });
+});`;
 }
 
 function buildUserPrompt(
   target: TestGenerationContext['target'],
   framework: 'jest' | 'vitest',
-  existingTestFile?: string
+  existingTestFile?: string,
+  testFilePath?: string,
+  importPath?: string
 ): string {
   let prompt = `Generate a test scaffold for the following function:\n\n`;
 
-  prompt += `File: ${target.filePath}\n`;
+  prompt += `Source file: ${target.filePath}\n`;
+  if (testFilePath) {
+    prompt += `Test file: ${testFilePath}\n`;
+  }
+  if (importPath) {
+    prompt += `IMPORT PATH (use this exact path): ${importPath}\n`;
+  }
   prompt += `Function: ${target.functionName}\n`;
-  prompt += `Type: ${target.functionType}\n\n`;
+  prompt += `Type: ${target.functionType}\n`;
+  
+  if (target.className) {
+    prompt += `Class: ${target.className}\n`;
+    prompt += `This is a CLASS METHOD, not a standalone function.\n`;
+    prompt += `- Import the CLASS: import { ${target.className} } from '${importPath || './source'}'\n`;
+    prompt += `- Instantiate: const instance = new ${target.className}()\n`;
+    prompt += `- Call method: instance.${target.functionName}()\n`;
+    prompt += `- DO NOT import the method as a function\n`;
+  }
+  
+  if (target.isPrivate) {
+    prompt += `WARNING: This is a PRIVATE method.\n`;
+  }
+  
+  if (target.classPrivateProperties && target.classPrivateProperties.length > 0) {
+    prompt += `WARNING: The class has private properties: ${target.classPrivateProperties.join(', ')}\n`;
+    prompt += `- DO NOT access these directly in tests\n`;
+  }
+  
+  prompt += '\n';
 
   prompt += `Function code:\n\`\`\`typescript\n${target.code}\n\`\`\`\n\n`;
 
@@ -80,12 +136,37 @@ function buildUserPrompt(
     prompt += `Note: Add new test scaffold to this file, maintaining the existing structure and style.\n\n`;
   }
 
+  const importExample = framework === 'jest' 
+    ? "import { describe, it } from 'jest';" 
+    : "import { describe, it } from 'vitest';";
+  
   prompt += `Generate a minimal test scaffold with:\n`;
-  prompt += `- Proper imports for ${framework}\n`;
-  prompt += `- describe block for ${target.functionName}\n`;
+  if (importPath) {
+    prompt += `- Import path: ${importPath} (use this exact path)\n`;
+  } else {
+    prompt += `- Calculate correct relative path from test file to source file\n`;
+  }
+  if (target.functionType === 'class-method') {
+    prompt += `- Import the CLASS, not the method\n`;
+    prompt += `- Create instance in setup: const instance = new ${target.className}()\n`;
+  }
+  prompt += `- Import statement: ${importExample}\n`;
+  prompt += `- Use describe() and it() functions directly (NOT test.describe() or test())\n`;
+  if (target.className) {
+    prompt += `- describe block for ${target.className} class\n`;
+    prompt += `- Nested describe block for ${target.functionName} method\n`;
+  } else {
+    prompt += `- describe block for ${target.functionName}\n`;
+  }
   prompt += `- it blocks with TODO comments for test cases (e.g., "it('should handle normal case', () => { // TODO: implement test });")\n`;
   prompt += `- No actual test implementations\n`;
-  prompt += `- Clear TODO comments indicating what each test should verify\n\n`;
+  prompt += `- Clear TODO comments indicating what each test should verify\n`;
+  prompt += `- Check existing test file to avoid duplicate describe blocks\n\n`;
+  prompt += `CRITICAL: This tool ONLY supports ${framework}. Use ONLY ${framework} syntax:\n`;
+  prompt += `- Import: ${importExample}\n`;
+  prompt += `- Use describe() and it() as direct function calls\n`;
+  prompt += `- NEVER use test.describe() or test.xxx() - those are NOT ${framework} syntax\n`;
+  prompt += `- ONLY supported frameworks: Jest and Vitest (you are using ${framework})\n\n`;
 
   return prompt;
 }

@@ -25,7 +25,7 @@ vi.mock('minimatch', () => ({
 
 describe('local-file-analyzer', () => {
   const mockGit = {
-    status: vi.fn(),
+    diffSummary: vi.fn(),
     diff: vi.fn(),
   };
 
@@ -35,10 +35,10 @@ describe('local-file-analyzer', () => {
     vi.mocked(simpleGit).mockReturnValue(mockGit as never);
     vi.mocked(existsSync).mockReturnValue(true);
     vi.mocked(readFileSync).mockReturnValue('export function test() {}');
-    vi.mocked(mockGit.status).mockResolvedValue({
-      modified: [],
-      created: [],
-      renamed: [],
+    vi.mocked(mockGit.diffSummary).mockResolvedValue({
+      files: [],
+      insertions: 0,
+      deletions: 0,
     } as never);
   });
 
@@ -54,10 +54,10 @@ describe('local-file-analyzer', () => {
   });
 
   it('should filter files by include patterns', async () => {
-    vi.mocked(mockGit.status).mockResolvedValue({
-      modified: ['src/utils.ts'],
-      created: [],
-      renamed: [],
+    vi.mocked(mockGit.diffSummary).mockResolvedValue({
+      files: [{ file: 'src/utils.ts', insertions: 5, deletions: 2 }],
+      insertions: 5,
+      deletions: 2,
     } as never);
     vi.mocked(mockGit.diff).mockResolvedValue('diff content');
     vi.mocked(parsePullRequestFiles).mockReturnValue([{
@@ -82,10 +82,10 @@ describe('local-file-analyzer', () => {
   });
 
   it('should exclude test files', async () => {
-    vi.mocked(mockGit.status).mockResolvedValue({
-      modified: ['src/utils.test.ts'],
-      created: [],
-      renamed: [],
+    vi.mocked(mockGit.diffSummary).mockResolvedValue({
+      files: [{ file: 'src/utils.test.ts', insertions: 1, deletions: 0 }],
+      insertions: 1,
+      deletions: 0,
     } as never);
 
     const targets = await extractLocalTestTargets({
