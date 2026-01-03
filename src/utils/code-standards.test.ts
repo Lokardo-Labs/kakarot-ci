@@ -12,8 +12,8 @@ describe('code-standards', () => {
 
   describe('detectCodeStyle', () => {
     it('should detect ESLint config', async () => {
-      vi.mocked(existsSync).mockImplementation((path: string) => {
-        return path.includes('.eslintrc.json');
+      vi.mocked(existsSync).mockImplementation((path) => {
+        return String(path).includes('.eslintrc.json');
       });
 
       const config = await detectCodeStyle('/project');
@@ -23,8 +23,8 @@ describe('code-standards', () => {
     });
 
     it('should detect Prettier config', async () => {
-      vi.mocked(existsSync).mockImplementation((path: string) => {
-        return path.includes('.prettierrc');
+      vi.mocked(existsSync).mockImplementation((path) => {
+        return String(path).includes('.prettierrc');
       });
 
       const config = await detectCodeStyle('/project');
@@ -34,8 +34,8 @@ describe('code-standards', () => {
     });
 
     it('should detect Biome config', async () => {
-      vi.mocked(existsSync).mockImplementation((path: string) => {
-        return path.includes('biome.json');
+      vi.mocked(existsSync).mockImplementation((path) => {
+        return String(path).includes('biome.json');
       });
 
       const config = await detectCodeStyle('/project');
@@ -45,8 +45,8 @@ describe('code-standards', () => {
     });
 
     it('should detect TypeScript config', async () => {
-      vi.mocked(existsSync).mockImplementation((path: string) => {
-        return path.includes('tsconfig.json');
+      vi.mocked(existsSync).mockImplementation((path) => {
+        return String(path).includes('tsconfig.json');
       });
 
       const config = await detectCodeStyle('/project');
@@ -67,8 +67,8 @@ describe('code-standards', () => {
     });
 
     it('should check package.json for ESLint config', async () => {
-      vi.mocked(existsSync).mockImplementation((path: string) => {
-        return path.includes('package.json');
+      vi.mocked(existsSync).mockImplementation((path) => {
+        return String(path).includes('package.json');
       });
       vi.mocked(readFileSync).mockReturnValue(JSON.stringify({
         eslintConfig: { rules: {} },
@@ -89,8 +89,8 @@ describe('code-standards', () => {
     });
 
     it('should handle Prettier errors gracefully', async () => {
-      vi.mocked(existsSync).mockImplementation((path: string) => {
-        return path.includes('.prettierrc');
+      vi.mocked(existsSync).mockImplementation((path) => {
+        return String(path).includes('.prettierrc');
       });
 
       const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -113,8 +113,8 @@ describe('code-standards', () => {
     });
 
     it('should handle ESLint errors gracefully', async () => {
-      vi.mocked(existsSync).mockImplementation((path: string) => {
-        return path.includes('.eslintrc');
+      vi.mocked(existsSync).mockImplementation((path) => {
+        return String(path).includes('.eslintrc');
       });
 
       const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});

@@ -6,9 +6,9 @@ import { detectPackageManager } from '../utils/package-manager-detector.js';
 import { createTestRunner } from '../utils/test-runner/factory.js';
 import { writeTestFiles } from '../utils/test-file-writer.js';
 import { readCoverageReport } from '../utils/coverage-reader.js';
-import { formatGeneratedCode, lintGeneratedCode } from '../utils/code-standards.js';
+import { formatGeneratedCode } from '../utils/code-standards.js';
 import { findProjectRoot } from '../utils/config-loader.js';
-import { readFileSync, existsSync } from 'fs';
+import { existsSync } from 'fs';
 import { join } from 'path';
 
 vi.mock('../llm/test-generator.js');
