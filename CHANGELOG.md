@@ -1,3 +1,10 @@
+## [0.10.5](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.4...v0.10.5) (2026-01-03)
+
+
+### Bug Fixes
+
+* Adding in type check and import fixer ([#40](https://github.com/Lokardo-Labs/kakarot-ci/issues/40)) ([f7c0996](https://github.com/Lokardo-Labs/kakarot-ci/commit/f7c09967c23d88c450eb460d12ae766bba5c0422))
+
 ## [0.10.4](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.3...v0.10.4) (2026-01-03)
 
 
