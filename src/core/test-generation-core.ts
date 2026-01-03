@@ -489,7 +489,41 @@ async function runTestsAndFix(
         if (!validation.valid) {
           warn(`Fixed test file validation failed for ${testFile}:`);
           validation.errors.forEach(err => warn(`  - ${err}`));
-          continue; // Skip this fix, try again next iteration
+          
+          // Check if these are syntax errors (recoverable) vs other errors
+          const syntaxErrors = validation.errors.filter(e => 
+            e.includes('Unclosed') || e.includes('Syntax') || e.includes('syntax') || 
+            e.includes('brace') || e.includes('parenthes') || e.includes('bracket')
+          );
+          
+          if (syntaxErrors.length > 0) {
+            // Syntax errors are recoverable - store them and retry in next iteration
+            // Store validation errors in the file data so we can include them in next fix attempt
+            const fileDataWithErrors = currentTestFiles.get(testFile);
+            if (fileDataWithErrors) {
+              const fileDataWithValidationErrors = {
+                ...fileDataWithErrors,
+                _validationErrors: validation.errors,
+              } as typeof fileDataWithErrors & { _validationErrors: string[] };
+              currentTestFiles.set(testFile, fileDataWithValidationErrors);
+            }
+            info(`Will retry ${testFile} with syntax error fixes in next attempt`);
+            // Mark that we're still working on fixes (don't stop the loop)
+            fixedAny = true; // Keep the loop going
+          } else {
+            // Non-syntax errors (type errors, etc.) - may be harder to fix automatically
+            // Still mark as working to keep loop going, but don't store errors
+            warn(`Non-syntax validation errors for ${testFile}, will retry in next attempt`);
+            fixedAny = true;
+          }
+          continue; // Skip writing this invalid file, but continue loop
+        }
+        
+        // Clear any previous validation errors if validation passes
+        const fileDataToClean = currentTestFiles.get(testFile);
+        if (fileDataToClean && '_validationErrors' in fileDataToClean) {
+          const { _validationErrors, ...cleanedData } = fileDataToClean as typeof fileDataToClean & { _validationErrors?: string[] };
+          currentTestFiles.set(testFile, cleanedData);
         }
 
         currentTestFiles.set(testFile, {
