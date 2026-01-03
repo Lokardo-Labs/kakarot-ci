@@ -264,6 +264,20 @@ export async function validateTestFile(
     }
   }
   
+  // 2.5. Check for framework syntax mismatches (detect framework from file path or content)
+  // This is a simple check - if we see jest.* in a vitest file or vice versa, flag it
+  const hasJestSyntax = /jest\.(Mock|fn|mock|spyOn)/.test(content);
+  const hasVitestSyntax = /vi\.(Mock|fn|mock|spyOn)/.test(content);
+  const isVitestFile = filePath.includes('vitest') || content.includes("from 'vitest'") || content.includes('from "vitest"');
+  const isJestFile = filePath.includes('jest') || content.includes("from 'jest'") || content.includes('from "jest"');
+  
+  if (isVitestFile && hasJestSyntax) {
+    errors.push(`Framework syntax error: Found Jest syntax (jest.Mock, jest.fn, etc.) in Vitest test file. Use vi.Mock, vi.fn() instead.`);
+  }
+  if (isJestFile && hasVitestSyntax) {
+    errors.push(`Framework syntax error: Found Vitest syntax (vi.Mock, vi.fn, etc.) in Jest test file. Use jest.Mock, jest.fn() instead.`);
+  }
+  
   // 3. TypeScript validation (if available)
   // Write to temp file first for validation
   const tempPath = filePath + '.tmp';

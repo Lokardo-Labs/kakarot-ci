@@ -423,8 +423,37 @@ async function runTestsAndFix(
     let fixedAny = false;
     for (const { testFile, result } of failures) {
       try {
-        const currentContent = currentTestFiles.get(testFile)?.content;
+        const currentFileData = currentTestFiles.get(testFile);
+        const currentContent = currentFileData?.content;
         if (!currentContent) {
+          continue;
+        }
+        
+        // Track last valid version and syntax error attempts
+        const lastValidContent = currentFileData && '_lastValidContent' in currentFileData
+          ? (currentFileData as { _lastValidContent?: string })._lastValidContent
+          : currentContent; // Use current as last valid if no previous valid version
+        
+        const syntaxErrorAttempts = currentFileData && '_syntaxErrorAttempts' in currentFileData
+          ? ((currentFileData as { _syntaxErrorAttempts?: number })._syntaxErrorAttempts || 0)
+          : 0;
+        
+        // If we've had too many syntax errors, revert to last valid and stop trying to fix syntax
+        if (syntaxErrorAttempts >= 3) {
+          warn(`Too many syntax error attempts (${syntaxErrorAttempts}) for ${testFile}, reverting to last valid version`);
+          if (lastValidContent && lastValidContent !== currentContent) {
+            currentTestFiles.set(testFile, {
+              content: lastValidContent,
+              targets: currentFileData.targets,
+            });
+            // Update file on disk
+            const fs = await import('fs/promises');
+            const path = await import('path');
+            const fullPath = path.join(projectRoot, testFile);
+            await fs.writeFile(fullPath, lastValidContent, 'utf-8');
+            info(`Reverted ${testFile} to last valid version`);
+          }
+          // Skip this file for now, try again next iteration with test logic fixes only
           continue;
         }
 
@@ -498,16 +527,19 @@ async function runTestsAndFix(
           
           if (syntaxErrors.length > 0) {
             // Syntax errors are recoverable - store them and retry in next iteration
-            // Store validation errors in the file data so we can include them in next fix attempt
+            // Increment syntax error attempt counter
             const fileDataWithErrors = currentTestFiles.get(testFile);
             if (fileDataWithErrors) {
               const fileDataWithValidationErrors = {
                 ...fileDataWithErrors,
                 _validationErrors: validation.errors,
-              } as typeof fileDataWithErrors & { _validationErrors: string[] };
+                _syntaxErrorAttempts: (fileDataWithErrors && '_syntaxErrorAttempts' in fileDataWithErrors
+                  ? ((fileDataWithErrors as { _syntaxErrorAttempts?: number })._syntaxErrorAttempts || 0)
+                  : 0) + 1,
+              } as typeof fileDataWithErrors & { _validationErrors: string[]; _syntaxErrorAttempts: number };
               currentTestFiles.set(testFile, fileDataWithValidationErrors);
             }
-            info(`Will retry ${testFile} with syntax error fixes in next attempt`);
+            warn(`Syntax errors detected (attempt ${syntaxErrorAttempts + 1}/3) for ${testFile}, will retry with syntax fixes`);
             // Mark that we're still working on fixes (don't stop the loop)
             fixedAny = true; // Keep the loop going
           } else {
@@ -519,10 +551,19 @@ async function runTestsAndFix(
           continue; // Skip writing this invalid file, but continue loop
         }
         
-        // Clear any previous validation errors if validation passes
+        // Validation passed - clear any previous validation errors and syntax error attempts
+        // Save this as the last valid version
         const fileDataToClean = currentTestFiles.get(testFile);
-        if (fileDataToClean && '_validationErrors' in fileDataToClean) {
-          const { _validationErrors, ...cleanedData } = fileDataToClean as typeof fileDataToClean & { _validationErrors?: string[] };
+        if (fileDataToClean) {
+          const cleanedData: typeof fileDataToClean & { _lastValidContent?: string } = { ...fileDataToClean };
+          if ('_validationErrors' in cleanedData) {
+            delete (cleanedData as { _validationErrors?: string[] })._validationErrors;
+          }
+          if ('_syntaxErrorAttempts' in cleanedData) {
+            delete (cleanedData as { _syntaxErrorAttempts?: number })._syntaxErrorAttempts;
+          }
+          // Save as last valid content
+          cleanedData._lastValidContent = formattedCode;
           currentTestFiles.set(testFile, cleanedData);
         }
 

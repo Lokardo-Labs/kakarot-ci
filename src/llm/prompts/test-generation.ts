@@ -122,7 +122,8 @@ describe('FunctionName', () => {
   });
 });
 
-CRITICAL: Use describe() and it() as direct function calls. NEVER use test.describe() or test.xxx() - those are NOT ${frameworkName} syntax.`;
+CRITICAL: Use describe() and it() as direct function calls. NEVER use test.describe() or test.xxx() - those are NOT ${frameworkName} syntax.
+${framework === 'vitest' ? 'CRITICAL: For Vitest, use vi.Mock, vi.fn(), vi.mock(), vi.spyOn() - NEVER use jest.Mock or jest.fn()' : 'CRITICAL: For Jest, use jest.Mock, jest.fn(), jest.mock(), jest.spyOn() - NEVER use vi.Mock or vi.fn()'}`;
 }
 
 function buildUserPrompt(
