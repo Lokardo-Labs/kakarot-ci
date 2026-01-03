@@ -1,3 +1,10 @@
+## [0.7.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.7.0...v0.7.1) (2025-11-30)
+
+
+### Bug Fixes
+
+* **404:** Another attempt to supress the 404s ([#25](https://github.com/Lokardo-Labs/kakarot-ci/issues/25)) ([91893fd](https://github.com/Lokardo-Labs/kakarot-ci/commit/91893fd8cfe79395c21062a6724cdf477dcc1fc2))
+
 # [0.7.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.6.6...v0.7.0) (2025-11-30)
 
 
