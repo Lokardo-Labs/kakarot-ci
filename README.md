@@ -19,6 +19,8 @@ Kakarot CI automatically generates comprehensive unit tests using AI. While opti
 - 🔍 **Smart Code Analysis**: Analyzes AST to extract functions and understand code structure
 - 🎯 **Targeted Testing**: Generates tests for specific functions, files, or entire codebases
 - 🔄 **Auto-Fix Loop**: Automatically fixes failing tests with multiple retry attempts (default: 5 attempts)
+- ✅ **File Validation**: Validates generated tests for syntax errors, type errors, and private property access before writing
+- 🛡️ **Private Property Protection**: Prevents tests from accessing private class properties
 - 📊 **Coverage Reports**: Optional test coverage analysis and summaries
 - 🧠 **Smart Context Optimization**: Automatically optimizes context to fit within model token limits
 - 🚀 **GitHub Integration**: Seamlessly integrates with GitHub Actions and PR workflows (optional)
@@ -248,6 +250,11 @@ Kakarot CI automatically retries on rate limit errors with exponential backoff, 
 
 - **`enableCoverage`** (boolean, optional, default: `false`)
   - Enable test coverage collection and reporting
+  - **Note**: Kakarot CI generates coverage by running tests with coverage flags. You need:
+    - Coverage package installed: `@vitest/coverage-v8` (Vitest) or `@jest/coverage` (Jest)
+    - Coverage configured in your test framework config with JSON reporter
+    - For Vitest: `coverage.reporter: ['text', 'json']` in `vitest.config.ts`
+    - For Jest: Coverage is enabled automatically with `--coverage --coverageReporters=json`
   - Example: `true`
 
 #### Debugging
@@ -424,20 +431,22 @@ Create a PAT with `repo` scope and add it as a repository secret named `GH_PAT`.
 1. **Analyze PR Changes**: Scans the pull request diff to identify changed files
 2. **Extract Functions**: Uses AST analysis to find functions, methods, and classes that were modified
 3. **Generate Tests**: Sends function code to LLM with carefully crafted prompts to generate comprehensive tests
-4. **Run Tests**: Executes the generated tests using your configured test framework
-5. **Fix Failures**: Automatically attempts to fix failing tests (up to `maxFixAttempts` times, default: 5). Context is automatically optimized to fit within model limits.
-6. **Commit Results**: Commits generated tests back to the PR (if `enableAutoCommit` is true)
-7. **Post Summary**: Posts a summary comment to the PR with test generation results
+4. **Validate Tests**: Validates generated tests for syntax completeness, type errors, and private property access before writing
+5. **Run Tests**: Executes the generated tests using your configured test framework
+6. **Fix Failures**: Automatically attempts to fix failing tests (up to `maxFixAttempts` times, default: 5). Context is automatically optimized to fit within model limits.
+7. **Commit Results**: Commits generated tests back to the PR (if `enableAutoCommit` is true)
+8. **Post Summary**: Posts a summary comment to the PR with test generation results
 
 ### Local Development Workflow (Full Mode)
 
 1. **Analyze Working Directory Changes**: Compares working directory to HEAD to identify changed files (staged and unstaged)
 2. **Extract Functions**: Uses AST analysis to find functions, methods, and classes that were modified
 3. **Generate Tests**: Sends function code to LLM to generate comprehensive tests
-4. **Run Tests**: Executes the generated tests using your configured test framework
-5. **Fix Failures**: Automatically attempts to fix failing tests (up to `maxFixAttempts` times, default: 5). Context is automatically optimized to fit within model limits.
-6. **Collect Coverage**: If `enableCoverage: true`, collects and reports test coverage after tests run
-7. **Report Results**: Displays summary of generated tests, test results, and coverage (if enabled)
+4. **Validate Tests**: Validates generated tests for syntax completeness, type errors, and private property access before writing. Invalid files are skipped and reported.
+5. **Run Tests**: Executes the generated tests using your configured test framework
+6. **Fix Failures**: Automatically attempts to fix failing tests (up to `maxFixAttempts` times, default: 5). Context is automatically optimized to fit within model limits. Fixed tests are re-validated before writing.
+7. **Collect Coverage**: If `enableCoverage: true`, collects and reports test coverage after tests run
+8. **Report Results**: Displays summary of generated tests, test results, and coverage (if enabled)
 
 ### Core Components
 
@@ -445,6 +454,7 @@ The tool is built with modular components that can be used independently:
 
 - **AST Analysis**: Extracts functions, methods, and classes from TypeScript/JavaScript files
 - **Test Generation**: Uses LLM prompts optimized for generating accurate, comprehensive tests
+- **File Validation**: Validates generated tests for syntax errors, type errors, and private property access
 - **Test Execution**: Runs tests using Jest or Vitest
 - **Auto-Fix Loop**: Iteratively fixes failing tests using LLM feedback
 - **GitHub Integration**: Optional integration for PR workflows, commits, and comments
@@ -639,6 +649,21 @@ A: ESLint, Prettier, Biome, and TypeScript config. The tool auto-detects which o
 
 **Q: Can I disable code formatting?**
 A: Yes, set `formatGeneratedCode: false` and `lintGeneratedCode: false` in config.
+
+### File Validation
+
+**Q: What validation does Kakarot perform on generated tests?**
+A: Kakarot validates all generated test files before writing them:
+- **Syntax completeness**: Checks for balanced braces, parentheses, and brackets
+- **Incomplete expressions**: Detects incomplete code (e.g., `const x = 1 +`)
+- **Private property access**: Prevents tests from accessing private class properties
+- **Type checking**: Runs TypeScript compiler validation (if available) to catch type errors and import issues
+
+**Q: What happens if validation fails?**
+A: Invalid test files are skipped and not written to disk. The error is reported in the summary, and generation continues for other files. This prevents broken test files from being committed.
+
+**Q: How does private property protection work?**
+A: Kakarot detects when generated tests attempt to access private class properties (e.g., `processor.cache = ...`). These tests are rejected during validation, and the LLM is instructed to test through public methods instead.
 
 ## Migration Guide
 

@@ -78,7 +78,7 @@ describe('test-generation-core', () => {
         usage: {},
       }),
     }) as never);
-    vi.mocked(writeTestFiles).mockReturnValue(['__tests__/utils.test.ts']);
+    vi.mocked(writeTestFiles).mockResolvedValue({ writtenPaths: ['__tests__/utils.test.ts'], failedPaths: [] });
     vi.mocked(createTestRunner).mockReturnValue({
       runTests: vi.fn().mockResolvedValue([{
         testFile: '__tests__/utils.test.ts',
