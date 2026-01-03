@@ -63,5 +63,14 @@ export interface TestFixContext {
   framework: 'jest' | 'vitest';
   attempt: number;
   maxAttempts: number;
+  // Enhanced context
+  testFilePath?: string;
+  functionNames?: string[];
+  failingTests?: Array<{
+    testName: string;
+    message: string;
+    stack?: string;
+  }>;
+  sourceFilePath?: string;
 }
 

@@ -299,13 +299,25 @@ async function runTestsAndFix(
 
     // Find failing tests
     const failures: Array<{ testFile: string; result: TestResult }> = [];
+    let totalFailingTests = 0;
     for (const result of results) {
       if (!result.success && result.failures.length > 0) {
         failures.push({ testFile: result.testFile, result });
+        totalFailingTests += result.failed;
       }
     }
 
-    info(`Found ${failures.length} failing test file(s), attempting fixes...`);
+    if (failures.length > 0) {
+      info(`Found ${failures.length} failing test file(s) with ${totalFailingTests} failing test(s), attempting fixes...`);
+      // Log details about partial failures
+      for (const { testFile, result } of failures) {
+        if (result.passed > 0) {
+          info(`  ${testFile}: ${result.passed} passed, ${result.failed} failed`);
+        } else {
+          info(`  ${testFile}: All ${result.failed} test(s) failed`);
+        }
+      }
+    }
 
     // Fix each failing test file
     let fixedAny = false;
@@ -320,11 +332,26 @@ async function runTestsAndFix(
         const targets = testFileToTargetsMap[testFile] || [];
         // Use the first target's code as the original code (or combine if multiple)
         const originalCode = targets.length > 0 
-          ? targets.map(t => `${t.functionName}:\n${t.code}`).join('\n\n')
+          ? targets.map(t => {
+              // Include context if available
+              const contextInfo = t.context ? `\n// Context (surrounding code):\n${t.context}\n` : '';
+              return `${t.functionName} (${t.functionType}):\n${t.code}${contextInfo}`;
+            }).join('\n\n')
           : currentContent; // Fallback to test code if no targets found
         
         const errorMessages = result.failures.map(f => f.message).join('\n');
         const testOutput = result.failures.map(f => f.message).join('\n');
+        
+        // Extract function names and source file path from targets
+        const functionNames = targets.map(t => t.functionName);
+        const sourceFilePath = targets.length > 0 ? targets[0].filePath : undefined;
+        
+        // Extract failing test details
+        const failingTests = result.failures.map(f => ({
+          testName: f.testName,
+          message: f.message,
+          stack: f.stack,
+        }));
 
         const fixedResult = await testGenerator.fixTest({
           testCode: currentContent,
@@ -334,6 +361,10 @@ async function runTestsAndFix(
           framework,
           attempt: attempt + 1,
           maxAttempts: maxFixAttempts,
+          testFilePath: testFile,
+          functionNames: functionNames.length > 0 ? functionNames : undefined,
+          failingTests: failingTests.length > 0 ? failingTests : undefined,
+          sourceFilePath,
         });
 
         // Apply code standards to fixed code

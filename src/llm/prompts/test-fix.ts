@@ -6,10 +6,33 @@ import type { LLMMessage } from '../../types/llm.js';
 import type { TestFixContext } from '../../types/llm.js';
 
 export function buildTestFixPrompt(context: TestFixContext): LLMMessage[] {
-  const { testCode, errorMessage, testOutput, originalCode, framework, attempt, maxAttempts } = context;
+  const { 
+    testCode, 
+    errorMessage, 
+    testOutput, 
+    originalCode, 
+    framework, 
+    attempt, 
+    maxAttempts,
+    testFilePath,
+    functionNames,
+    failingTests,
+    sourceFilePath
+  } = context;
 
   const systemPrompt = buildSystemPrompt(framework, attempt, maxAttempts);
-  const userPrompt = buildUserPrompt(testCode, errorMessage, testOutput, originalCode, framework, attempt);
+  const userPrompt = buildUserPrompt(
+    testCode, 
+    errorMessage, 
+    testOutput, 
+    originalCode, 
+    framework, 
+    attempt,
+    testFilePath,
+    functionNames,
+    failingTests,
+    sourceFilePath
+  );
 
   return [
     { role: 'system', content: systemPrompt },
@@ -68,13 +91,43 @@ function buildUserPrompt(
   testOutput: string | undefined,
   originalCode: string,
   framework: 'jest' | 'vitest',
-  attempt: number
+  attempt: number,
+  testFilePath?: string,
+  functionNames?: string[],
+  failingTests?: Array<{ testName: string; message: string; stack?: string }>,
+  sourceFilePath?: string
 ): string {
   let prompt = `The following ${framework} test is failing. Fix it:\n\n`;
 
+  // Add file context
+  if (sourceFilePath) {
+    prompt += `Source file: ${sourceFilePath}\n`;
+  }
+  if (testFilePath) {
+    prompt += `Test file: ${testFilePath}\n`;
+  }
+  if (functionNames && functionNames.length > 0) {
+    prompt += `Functions being tested: ${functionNames.join(', ')}\n`;
+  }
+  prompt += '\n';
+
+  // Add original function code with better formatting
   prompt += `Original function code:\n\`\`\`typescript\n${originalCode}\n\`\`\`\n\n`;
 
+  // Add failing test code
   prompt += `Failing test code:\n\`\`\`typescript\n${testCode}\n\`\`\`\n\n`;
+
+  // Add detailed error information
+  if (failingTests && failingTests.length > 0) {
+    prompt += `Failing test cases:\n`;
+    for (const failingTest of failingTests) {
+      prompt += `- ${failingTest.testName}: ${failingTest.message}\n`;
+      if (failingTest.stack) {
+        prompt += `  Stack: ${failingTest.stack.split('\n')[0]}\n`;
+      }
+    }
+    prompt += '\n';
+  }
 
   prompt += `Error message:\n\`\`\`\n${errorMessage}\n\`\`\`\n\n`;
 
@@ -83,7 +136,12 @@ function buildUserPrompt(
   }
 
   if (attempt > 1) {
-    prompt += `Note: This is fix attempt ${attempt}. Previous attempts failed. Please analyze the error more carefully.\n\n`;
+    prompt += `Note: This is fix attempt ${attempt} of ${framework === 'jest' ? 'Jest' : 'Vitest'}. Previous attempts failed. Please analyze the error more carefully and ensure:\n`;
+    prompt += `- The test matches the ACTUAL runtime behavior of the function\n`;
+    prompt += `- All imports and dependencies are correct\n`;
+    prompt += `- Mocks are properly configured if needed\n`;
+    prompt += `- Async operations are properly handled\n`;
+    prompt += `- Error expectations match what the function actually throws\n\n`;
   }
 
   prompt += `Fix the test code to resolve the error. Return ONLY the corrected test code, no explanations.`;
