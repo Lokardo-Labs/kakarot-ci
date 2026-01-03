@@ -1,3 +1,16 @@
+# [0.9.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.8.0...v0.9.0) (2026-01-03)
+
+
+### Bug Fixes
+
+* **release:** Updating workflow properly ([#32](https://github.com/Lokardo-Labs/kakarot-ci/issues/32)) ([645bdf0](https://github.com/Lokardo-Labs/kakarot-ci/commit/645bdf06af6a4cf55e5fdf5e93c8fdc67aa456f3))
+
+
+### Features
+
+* Fixing a ton of bugs ([#30](https://github.com/Lokardo-Labs/kakarot-ci/issues/30)) ([c6be69f](https://github.com/Lokardo-Labs/kakarot-ci/commit/c6be69f24d36f7bf406c1033e0d02556c3082516))
+* **release:** Adding in code for release ([#31](https://github.com/Lokardo-Labs/kakarot-ci/issues/31)) ([d16c31a](https://github.com/Lokardo-Labs/kakarot-ci/commit/d16c31a8412becddcc766f39f7b80eb45d8c947e))
+
 # [0.8.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.7.1...v0.8.0) (2026-01-03)
 
 
