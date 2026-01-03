@@ -446,6 +446,329 @@ Options:
 - `PR_NUMBER`: Pull request number (alternative to `--pr` flag)
 - `KAKAROT_DEBUG`: Enable debug logging (`true`/`false`)
 
+## Troubleshooting
+
+### Common Issues
+
+#### "LLM API key is required"
+**Problem**: The API key is missing or not properly configured.
+
+**Solutions**:
+- Set `KAKAROT_API_KEY` environment variable
+- Add `apiKey` to your config file (`kakarot.config.js` or `.kakarot-ci.config.json`)
+- Verify the API key is valid for your chosen provider (OpenAI, Anthropic, or Google)
+
+#### "GitHub token is required"
+**Problem**: GitHub token is missing when trying to use GitHub features.
+
+**Solutions**:
+- Set `GITHUB_TOKEN` environment variable
+- Add `githubToken` to your config file
+- Use `--token` CLI flag
+- For GitHub Actions, ensure `GITHUB_TOKEN` is available (or use a PAT if your org restricts permissions)
+
+#### "Pull request number is required"
+**Problem**: PR number cannot be detected automatically.
+
+**Solutions**:
+- Use `--pr <number>` CLI flag
+- Set `PR_NUMBER` environment variable
+- In GitHub Actions, ensure `GITHUB_EVENT_PATH` is set (should be automatic)
+
+#### "Invalid repository format"
+**Problem**: Repository owner/repo format is incorrect.
+
+**Solutions**:
+- Use format: `owner/repo` (e.g., `myorg/myrepo`)
+- Set `GITHUB_REPOSITORY` environment variable
+- Use `--owner` and `--repo` CLI flags separately
+
+#### "Unsupported test framework"
+**Problem**: Framework is not `jest` or `vitest`.
+
+**Solutions**:
+- Set `framework: 'jest'` or `framework: 'vitest'` in config
+- Ensure Jest or Vitest is installed in your project
+- Verify your test framework is properly configured
+
+#### "No valid JSON output from Vitest/Jest"
+**Problem**: Test runner output cannot be parsed.
+
+**Solutions**:
+- Ensure test framework is properly installed
+- Check that test files are valid
+- Enable debug mode (`KAKAROT_DEBUG=true`) to see raw output
+- Verify package manager detection (npm/yarn/pnpm)
+
+#### Tests fail after generation
+**Problem**: Generated tests don't pass.
+
+**Solutions**:
+- Increase `maxFixAttempts` in config (default: 3)
+- Check test output for specific errors
+- Review generated tests manually
+- Ensure your code is testable (no circular dependencies, proper exports)
+- Check that mocks are set up correctly if your code has external dependencies
+
+#### "OpenAI/Anthropic/Google API error: 401"
+**Problem**: Invalid API key or authentication failure.
+
+**Solutions**:
+- Verify API key is correct
+- Check API key has proper permissions
+- Ensure you're using the correct key format for your provider
+- Check if API key has expired or been revoked
+
+#### "OpenAI/Anthropic/Google API error: 429"
+**Problem**: Rate limit exceeded.
+
+**Solutions**:
+- Wait before retrying
+- Reduce `maxTestsPerPR` to process fewer tests at once
+- Check your API usage limits
+- Consider using a different model or provider
+
+#### "Expected file but got directory"
+**Problem**: Path points to a directory instead of a file.
+
+**Solutions**:
+- Check your `includePatterns` and `excludePatterns` in config
+- Verify file paths are correct
+- Ensure test files aren't being included in source file patterns
+
+#### Commit fails in GitHub Actions
+**Problem**: Cannot commit generated tests.
+
+**Solutions**:
+- Ensure `contents: write` permission is set in workflow
+- Use a PAT if your organization restricts `GITHUB_TOKEN` permissions
+- Check that the branch is not protected
+- Verify `enableAutoCommit` is `true` in config
+
+#### TypeScript config files not working
+**Problem**: `kakarot.config.ts` files are not recognized.
+
+**Solutions**:
+- Use JavaScript (`.js`) or JSON (`.json`) config files instead
+- TypeScript config files require transpilation which is not available in the compiled package
+- Use `kakarot.config.js` or `.kakarot-ci.config.json`
+
+### Debug Mode
+
+Enable debug logging to troubleshoot issues:
+
+```bash
+KAKAROT_DEBUG=true npx kakarot-ci --pr 123
+```
+
+Or in config:
+```javascript
+{
+  debug: true
+}
+```
+
+This will show:
+- Detailed API requests/responses
+- Test execution output
+- File operations
+- Configuration loading
+- Error stack traces
+
+## FAQ
+
+### General
+
+**Q: What LLM providers are supported?**
+A: OpenAI, Anthropic (Claude), and Google (Gemini). You can switch providers via the `provider` config option or `PROVIDER` environment variable.
+
+**Q: Can I use this without GitHub?**
+A: Yes! Use `scaffold` or `full` mode for local development:
+```bash
+npx kakarot-ci --mode scaffold
+npx kakarot-ci --mode full
+```
+
+**Q: Does this work with JavaScript or only TypeScript?**
+A: Both! Kakarot CI supports `.ts`, `.tsx`, `.js`, and `.jsx` files.
+
+**Q: Can I customize the generated tests?**
+A: Yes, you can provide custom prompts via the `customPrompts` config option to override default test generation behavior.
+
+**Q: What test frameworks are supported?**
+A: Jest and Vitest. Set `framework: 'jest'` or `framework: 'vitest'` in your config.
+
+### Configuration
+
+**Q: Where should I put my config file?**
+A: Config files can be:
+- `kakarot.config.js` (root directory)
+- `.kakarot-ci.config.js` (root directory)
+- `.kakarot-ci.config.json` (root directory)
+- `package.json` (under `kakarotCi` field)
+
+**Q: Can I use environment variables instead of a config file?**
+A: Yes! Most options can be set via environment variables. See the [Environment Variables](#environment-variables) section.
+
+**Q: How do I exclude certain files from test generation?**
+A: Use `excludePatterns` in your config:
+```javascript
+{
+  excludePatterns: ['**/*.test.ts', '**/vendor/**', '**/node_modules/**']
+}
+```
+
+**Q: Can I generate tests for specific files only?**
+A: Yes, use local modes (`scaffold` or `full`) which analyze git changes, or configure `includePatterns` to limit scope.
+
+### Test Generation
+
+**Q: How does the tool decide what to test?**
+A: It analyzes PR diffs (or local git changes) to find modified functions, methods, and classes. It uses AST analysis to extract code structure.
+
+**Q: What if generated tests fail?**
+A: Kakarot CI automatically attempts to fix failing tests up to `maxFixAttempts` times (default: 3). If tests still fail after all attempts, they're posted as suggestions instead of being committed.
+
+**Q: Can I review tests before they're committed?**
+A: Yes, set `enableAutoCommit: false` in your config. Tests will be generated but not committed automatically.
+
+**Q: How does scaffold mode differ from full mode?**
+A: 
+- **Scaffold**: Generates test structure only (describe/it blocks with TODO comments)
+- **Full**: Generates complete tests with assertions
+- **PR mode**: Full tests + GitHub integration (commits, PR comments)
+
+**Q: Does it generate tests for existing code?**
+A: By default, it only generates tests for changed code in PRs. In local modes, it analyzes git changes. You can configure `includePatterns` to target specific files.
+
+### GitHub Integration
+
+**Q: Do I need a GitHub token?**
+A: Only if you're using PR mode or want to commit tests. For local modes (`scaffold`/`full`), no GitHub token is needed.
+
+**Q: What permissions does the GitHub token need?**
+A: For full functionality:
+- `repo` scope (for commits and PR operations)
+- Or in GitHub Actions: `contents: write` and `pull-requests: write` permissions
+
+**Q: Can I use this in private repositories?**
+A: Yes! Just provide a GitHub token with appropriate permissions.
+
+**Q: What if my organization restricts GITHUB_TOKEN permissions?**
+A: Use a Personal Access Token (PAT) with `repo` scope. See the [GitHub Actions Integration](#github-actions-integration) section for details.
+
+**Q: How are PR comments formatted?**
+A: PR comments include:
+- Summary of generated tests
+- Test results (passed/failed)
+- Coverage metrics (if enabled)
+- Coverage delta (change in coverage)
+
+### Performance & Limits
+
+**Q: How many tests can be generated per PR?**
+A: Default limit is 50 (`maxTestsPerPR`). You can increase this, but be mindful of API rate limits and costs.
+
+**Q: How long does test generation take?**
+A: Depends on:
+- Number of functions to test
+- LLM provider response time
+- Test execution time
+- Fix loop iterations
+
+Typically 1-5 minutes for a small PR, 10-20 minutes for larger PRs.
+
+**Q: Does this use a lot of API tokens?**
+A: Token usage depends on:
+- Code complexity
+- Number of functions
+- Fix loop iterations
+- Model used
+
+Enable debug mode to see token usage per operation.
+
+### Code Standards
+
+**Q: Does it format generated code?**
+A: Yes, by default it auto-detects and applies your project's code style (ESLint, Prettier, Biome). You can disable this via `formatGeneratedCode: false` or `lintGeneratedCode: false`.
+
+**Q: What code style tools are supported?**
+A: ESLint, Prettier, Biome, and TypeScript config. The tool auto-detects which ones you're using.
+
+**Q: Can I disable code formatting?**
+A: Yes, set `formatGeneratedCode: false` and `lintGeneratedCode: false` in config.
+
+## Migration Guide
+
+### Upgrading Between Versions
+
+Kakarot CI follows semantic versioning. Breaking changes are documented in [CHANGELOG.md](CHANGELOG.md).
+
+#### From v0.3.x to v0.4.x
+
+**New Features**:
+- Added `mode` option (`pr`, `scaffold`, `full`)
+- Added `codeStyle` configuration options
+- Added `customPrompts` for prompt customization
+
+**Config Changes**:
+- `mode` is now optional (defaults to `'pr'`)
+- New `codeStyle` object with `autoDetect`, `formatGeneratedCode`, `lintGeneratedCode`
+- New `customPrompts` object for custom prompt overrides
+
+**Migration Steps**:
+1. No breaking changes - existing configs continue to work
+2. Optionally add `mode: 'pr'` to explicitly set PR mode
+3. Optionally enable code standards integration:
+```javascript
+{
+  codeStyle: {
+    autoDetect: true,
+    formatGeneratedCode: true,
+    lintGeneratedCode: true
+  }
+}
+```
+
+#### From v0.2.x to v0.3.x
+
+**Breaking Changes**:
+- TypeScript config files (`.ts`) are no longer supported
+- Use `.js` or `.json` config files instead
+
+**Migration Steps**:
+1. Rename `kakarot.config.ts` to `kakarot.config.js`
+2. Remove TypeScript-specific syntax (type annotations, imports)
+3. Use JSDoc comments for type hints:
+```javascript
+/** @type {import('@kakarot-ci/core').KakarotConfig} */
+const config = { ... };
+```
+
+#### General Upgrade Tips
+
+1. **Backup your config**: Before upgrading, save a copy of your config file
+2. **Check CHANGELOG**: Review breaking changes in [CHANGELOG.md](CHANGELOG.md)
+3. **Test in a branch**: Try the upgrade in a feature branch first
+4. **Update dependencies**: Run `npm update @kakarot-ci/core`
+5. **Verify config**: Ensure your config still works with the new version
+
+### Config File Migration
+
+If you need to migrate from one config format to another:
+
+**From package.json to separate file**:
+1. Copy `package.json` → `kakarotCi` field content
+2. Create `kakarot.config.js` with that content
+3. Remove `kakarotCi` from `package.json`
+
+**From JSON to JavaScript**:
+1. Copy `.kakarot-ci.config.json` content
+2. Create `kakarot.config.js`
+3. Convert JSON to JavaScript object syntax
+4. Add JSDoc type hint if desired
+5. Delete JSON file
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
