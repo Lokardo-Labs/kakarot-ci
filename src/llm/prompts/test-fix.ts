@@ -62,6 +62,7 @@ CRITICAL SYNTAX: Use ONLY ${frameworkName} syntax:
 - Use describe() and it() as direct function calls
 - NEVER use test.describe() or test.xxx() - those are NOT ${frameworkName} syntax
 - NEVER access private properties directly - if you see instance.privateProp, remove it and use constructor or public methods instead
+${framework === 'vitest' ? '- For Vitest: Use vi.Mock, vi.fn(), vi.mock() - NEVER use jest.Mock or jest.fn()' : '- For Jest: Use jest.Mock, jest.fn(), jest.mock() - NEVER use vi.Mock or vi.fn()'}
 
 Requirements:
 1. Analyze the original function code to understand its ACTUAL runtime behavior

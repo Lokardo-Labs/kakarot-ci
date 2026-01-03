@@ -55,6 +55,7 @@ CRITICAL SYNTAX REQUIREMENTS:
 - NEVER use test.describe() or test.xxx() - this is NOT ${frameworkName} syntax
 - NEVER use test() as a method call on an object (e.g., test.describe, test.it)
 - ONLY use: describe() and it() as direct function calls
+${framework === 'vitest' ? '- For Vitest: Use vi.Mock, vi.fn(), vi.mock(), vi.spyOn() - NEVER use jest.Mock or jest.fn()' : '- For Jest: Use jest.Mock, jest.fn(), jest.mock(), jest.spyOn() - NEVER use vi.Mock or vi.fn()'}
 
 Requirements:
 1. Generate ONLY the basic test structure, not full implementations
@@ -172,6 +173,7 @@ function buildUserPrompt(
   prompt += `- Import: ${importExample}\n`;
   prompt += `- Use describe() and it() as direct function calls\n`;
   prompt += `- NEVER use test.describe() or test.xxx() - those are NOT ${framework} syntax\n`;
+  prompt += `${framework === 'vitest' ? '- For Vitest: Use vi.Mock, vi.fn(), vi.mock(), vi.spyOn() - NEVER use jest.Mock or jest.fn()' : '- For Jest: Use jest.Mock, jest.fn(), jest.mock(), jest.spyOn() - NEVER use vi.Mock or vi.fn()'}\n`;
   prompt += `- ONLY supported frameworks: Jest and Vitest (you are using ${framework})\n\n`;
 
   return prompt;
