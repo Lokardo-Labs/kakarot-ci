@@ -1,3 +1,10 @@
+## [0.10.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.0...v0.10.1) (2026-01-03)
+
+
+### Bug Fixes
+
+* Adding in merger ([#36](https://github.com/Lokardo-Labs/kakarot-ci/issues/36)) ([57dad86](https://github.com/Lokardo-Labs/kakarot-ci/commit/57dad869848f61a69279f485dd1c23c820ed8490))
+
 # [0.10.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.9.1...v0.10.0) (2026-01-03)
 
 
