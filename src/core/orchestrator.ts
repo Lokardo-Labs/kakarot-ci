@@ -139,16 +139,23 @@ export async function runPullRequest(context: PullRequestContext): Promise<TestG
 
   // Commit tests if enabled
   if (config.enableAutoCommit && testFiles.size > 0) {
-    await commitTests(
-      githubClient,
-      pr,
-      Array.from(testFiles.entries()).map(([path, data]) => ({
-        path,
-        content: data.content,
-      })),
-      config,
-      summary
-    );
+    // Check if we should skip commit for failing tests
+    const shouldSkipCommit = summary.testsFailed > 0 && config.skipCommitOnFailure;
+    
+    if (shouldSkipCommit) {
+      warn(`Skipping commit due to ${summary.testsFailed} failing test(s). Set skipCommitOnFailure: false to commit anyway.`);
+    } else {
+      await commitTests(
+        githubClient,
+        pr,
+        Array.from(testFiles.entries()).map(([path, data]) => ({
+          path,
+          content: data.content,
+        })),
+        config,
+        summary
+      );
+    }
   }
 
   // Post PR comment if enabled
@@ -164,6 +171,29 @@ export async function runPullRequest(context: PullRequestContext): Promise<TestG
 /**
  * Commit generated tests to the repository
  */
+function buildCommitMessage(
+  config: KakarotConfig,
+  summary: TestGenerationSummary,
+  prNumber?: number
+): string {
+  if (config.commitMessageTemplate) {
+    // Replace template variables
+    return config.commitMessageTemplate
+      .replace('{{testsGenerated}}', String(summary.testsGenerated))
+      .replace('{{targetsProcessed}}', String(summary.targetsProcessed))
+      .replace('{{testFilesCount}}', String(summary.testFiles.length))
+      .replace('{{prNumber}}', prNumber ? String(prNumber) : '')
+      .replace('{{testsFailed}}', String(summary.testsFailed));
+  }
+  
+  // Default commit message
+  const baseMessage = prNumber 
+    ? `test: add unit tests for PR #${prNumber}`
+    : `test: add unit tests`;
+  
+  return `${baseMessage}\n\nGenerated ${summary.testsGenerated} test(s) for ${summary.targetsProcessed} function(s)`;
+}
+
 async function commitTests(
   githubClient: GitHubClient,
   pr: PullRequest,
@@ -174,6 +204,8 @@ async function commitTests(
   info(`Committing ${testFiles.length} test file(s)`);
 
   try {
+    const commitMessage = buildCommitMessage(config, summary, pr.number);
+    
     if (config.commitStrategy === 'branch-pr') {
       // Create a new branch and PR with unique timestamp
       const timestamp = Date.now();
@@ -186,7 +218,7 @@ async function commitTests(
           path: file.path,
           content: file.content,
         })),
-        message: `test: add unit tests for PR #${pr.number}\n\nGenerated ${summary.testsGenerated} test(s) for ${summary.targetsProcessed} function(s)`,
+        message: commitMessage,
         branch: branchName,
         baseSha,
       });
@@ -205,17 +237,39 @@ async function commitTests(
       success(`Created PR #${testPR.number} with generated tests`);
     } else {
       // Direct commit to PR branch
+      try {
+        // Get latest PR to ensure we have the most recent SHA
+        const latestPR = await githubClient.getPullRequest(pr.number);
+        
       await githubClient.commitFiles({
         files: testFiles.map(file => ({
           path: file.path,
           content: file.content,
         })),
-        message: `test: add unit tests\n\nGenerated ${summary.testsGenerated} test(s) for ${summary.targetsProcessed} function(s)`,
+        message: commitMessage,
         branch: pr.head.ref,
-        baseSha: pr.head.sha,
+          baseSha: latestPR.head.sha, // Use latest SHA to avoid conflicts
       });
 
       success(`Committed ${testFiles.length} test file(s) to ${pr.head.ref}`);
+      } catch (commitErr: unknown) {
+        // Check if it's a conflict error
+        const isConflict = commitErr && typeof commitErr === 'object' && 
+          ('status' in commitErr && commitErr.status === 409) ||
+          (commitErr instanceof Error && (
+            commitErr.message.includes('409') ||
+            commitErr.message.includes('conflict') ||
+            commitErr.message.includes('reference is not up to date')
+          ));
+        
+        if (isConflict) {
+          warn('Commit failed due to branch conflict. The PR branch has moved ahead.');
+          warn('This usually means the PR was updated while tests were being generated.');
+          warn('You may need to run Kakarot CI again, or manually merge the latest changes.');
+          throw new Error('Commit conflict: PR branch has moved ahead. Please retry after syncing with the base branch.');
+        }
+        throw commitErr;
+      }
     }
   } catch (err) {
     error(`Failed to commit tests: ${err instanceof Error ? err.message : String(err)}`);
@@ -266,17 +320,72 @@ ${summary.errors.length > 0
       );
 
       const coverageSummary = await testGenerator.generateCoverageSummary(messages);
-      comment += `\n\n## 📊 Coverage Summary\n\n${coverageSummary}`;
+      
+      // Add coverage badges
+      const cov = summary.coverageReport.total;
+      const linesPercent = cov.lines.percentage.toFixed(1);
+      const branchesPercent = cov.branches.percentage.toFixed(1);
+      const functionsPercent = cov.functions.percentage.toFixed(1);
+      const statementsPercent = cov.statements.percentage.toFixed(1);
+      
+      const badgeColor = (percent: number) => {
+        if (percent >= 80) return 'brightgreen';
+        if (percent >= 60) return 'green';
+        if (percent >= 40) return 'yellow';
+        if (percent >= 20) return 'orange';
+        return 'red';
+      };
+      
+      const linesBadge = `![Lines Coverage](https://img.shields.io/badge/lines-${linesPercent}%25-${badgeColor(cov.lines.percentage)}?style=flat-square)`;
+      const branchesBadge = `![Branches Coverage](https://img.shields.io/badge/branches-${branchesPercent}%25-${badgeColor(cov.branches.percentage)}?style=flat-square)`;
+      const functionsBadge = `![Functions Coverage](https://img.shields.io/badge/functions-${functionsPercent}%25-${badgeColor(cov.functions.percentage)}?style=flat-square)`;
+      const statementsBadge = `![Statements Coverage](https://img.shields.io/badge/statements-${statementsPercent}%25-${badgeColor(cov.statements.percentage)}?style=flat-square)`;
+      
+      comment += `\n\n## 📊 Coverage Summary\n\n`;
+      comment += `${linesBadge} ${branchesBadge} ${functionsBadge} ${statementsBadge}\n\n`;
+      comment += `${coverageSummary}`;
     } catch (err) {
       warn(`Failed to generate coverage summary: ${err instanceof Error ? err.message : String(err)}`);
       
       // Fallback to basic coverage metrics
       const cov = summary.coverageReport.total;
-      comment += `\n\n## 📊 Coverage Summary\n\n` +
-        `- **Lines:** ${cov.lines.percentage.toFixed(1)}% (${cov.lines.covered}/${cov.lines.total})\n` +
-        `- **Branches:** ${cov.branches.percentage.toFixed(1)}% (${cov.branches.covered}/${cov.branches.total})\n` +
-        `- **Functions:** ${cov.functions.percentage.toFixed(1)}% (${cov.functions.covered}/${cov.functions.total})\n` +
-        `- **Statements:** ${cov.statements.percentage.toFixed(1)}% (${cov.statements.covered}/${cov.statements.total})`;
+      const linesPercent = cov.lines.percentage.toFixed(1);
+      const branchesPercent = cov.branches.percentage.toFixed(1);
+      const functionsPercent = cov.functions.percentage.toFixed(1);
+      const statementsPercent = cov.statements.percentage.toFixed(1);
+      
+      // Coverage badges using shields.io
+      const badgeColor = (percent: number) => {
+        if (percent >= 80) return 'brightgreen';
+        if (percent >= 60) return 'green';
+        if (percent >= 40) return 'yellow';
+        if (percent >= 20) return 'orange';
+        return 'red';
+      };
+      
+      const linesBadge = `![Lines Coverage](https://img.shields.io/badge/lines-${linesPercent}%25-${badgeColor(cov.lines.percentage)}?style=flat-square)`;
+      const branchesBadge = `![Branches Coverage](https://img.shields.io/badge/branches-${branchesPercent}%25-${badgeColor(cov.branches.percentage)}?style=flat-square)`;
+      const functionsBadge = `![Functions Coverage](https://img.shields.io/badge/functions-${functionsPercent}%25-${badgeColor(cov.functions.percentage)}?style=flat-square)`;
+      const statementsBadge = `![Statements Coverage](https://img.shields.io/badge/statements-${statementsPercent}%25-${badgeColor(cov.statements.percentage)}?style=flat-square)`;
+      
+      comment += `\n\n## 📊 Coverage Summary\n\n`;
+      comment += `${linesBadge} ${branchesBadge} ${functionsBadge} ${statementsBadge}\n\n`;
+      comment += `- **Lines:** ${linesPercent}% (${cov.lines.covered}/${cov.lines.total})\n` +
+        `- **Branches:** ${branchesPercent}% (${cov.branches.covered}/${cov.branches.total})\n` +
+        `- **Functions:** ${functionsPercent}% (${cov.functions.covered}/${cov.functions.total})\n` +
+        `- **Statements:** ${statementsPercent}% (${cov.statements.covered}/${cov.statements.total})`;
+      
+      // Add coverage delta if available
+      if (summary.coverageDelta) {
+        const delta = summary.coverageDelta;
+        const deltaLines = delta.lines > 0 ? `+${delta.lines.toFixed(1)}` : delta.lines.toFixed(1);
+        const deltaBranches = delta.branches > 0 ? `+${delta.branches.toFixed(1)}` : delta.branches.toFixed(1);
+        const deltaFunctions = delta.functions > 0 ? `+${delta.functions.toFixed(1)}` : delta.functions.toFixed(1);
+        const deltaStatements = delta.statements > 0 ? `+${delta.statements.toFixed(1)}` : delta.statements.toFixed(1);
+        
+        comment += `\n\n**Coverage Changes:**\n`;
+        comment += `- Lines: ${deltaLines}% | Branches: ${deltaBranches}% | Functions: ${deltaFunctions}% | Statements: ${deltaStatements}%`;
+      }
     }
   }
 

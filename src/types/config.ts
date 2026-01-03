@@ -21,6 +21,8 @@ export const KakarotConfigSchema = z.object({
   maxTestsPerPR: z.number().int().min(1).default(50),
   enableAutoCommit: z.boolean().default(true),
   commitStrategy: z.enum(['direct', 'branch-pr']).default('direct'),
+  commitMessageTemplate: z.string().optional(),
+  skipCommitOnFailure: z.boolean().default(false),
   enablePRComments: z.boolean().default(true),
   enableCoverage: z.boolean().default(false),
   codeStyle: z.object({
