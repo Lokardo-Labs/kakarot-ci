@@ -22,6 +22,15 @@ export interface FileValidationResult {
 export function checkSyntaxCompleteness(code: string): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
   
+  // Track line numbers for better error reporting
+  let currentLine = 1;
+  let currentColumn = 0;
+  
+  // Track positions of unclosed braces/parentheses for line number reporting
+  const unclosedBraces: Array<{ line: number; column: number }> = [];
+  const unclosedParens: Array<{ line: number; column: number }> = [];
+  const unclosedBrackets: Array<{ line: number; column: number }> = [];
+  
   // Check for balanced braces
   let braceDepth = 0;
   let parenDepth = 0;
@@ -32,15 +41,23 @@ export function checkSyntaxCompleteness(code: string): { valid: boolean; errors:
   let commentType: 'line' | 'block' | null = null;
   
   for (let i = 0; i < code.length; i++) {
-    const char = code[i];
+    const currentChar = code[i];
     const nextChar = code[i + 1];
     
+    // Track line numbers
+    if (currentChar === '\n') {
+      currentLine++;
+      currentColumn = 0;
+    } else {
+      currentColumn++;
+    }
+    
     // Handle strings
-    if (!inComment && (char === '"' || char === "'" || char === '`')) {
+    if (!inComment && (currentChar === '"' || currentChar === "'" || currentChar === '`')) {
       if (!inString) {
         inString = true;
-        stringChar = char;
-      } else if (char === stringChar && code[i - 1] !== '\\') {
+        stringChar = currentChar;
+      } else if (currentChar === stringChar && code[i - 1] !== '\\') {
         inString = false;
         stringChar = '';
       }
@@ -50,24 +67,24 @@ export function checkSyntaxCompleteness(code: string): { valid: boolean; errors:
     if (inString) continue;
     
     // Handle comments
-    if (char === '/' && nextChar === '/') {
+    if (currentChar === '/' && nextChar === '/') {
       inComment = true;
       commentType = 'line';
       i++; // Skip next char
       continue;
     }
-    if (char === '/' && nextChar === '*') {
+    if (currentChar === '/' && nextChar === '*') {
       inComment = true;
       commentType = 'block';
       i++; // Skip next char
       continue;
     }
-    if (inComment && commentType === 'line' && char === '\n') {
+    if (inComment && commentType === 'line' && currentChar === '\n') {
       inComment = false;
       commentType = null;
       continue;
     }
-    if (inComment && commentType === 'block' && char === '*' && nextChar === '/') {
+    if (inComment && commentType === 'block' && currentChar === '*' && nextChar === '/') {
       inComment = false;
       commentType = null;
       i++; // Skip next char
@@ -76,29 +93,56 @@ export function checkSyntaxCompleteness(code: string): { valid: boolean; errors:
     
     if (inComment) continue;
     
-    // Count braces
-    if (char === '{') braceDepth++;
-    if (char === '}') braceDepth--;
-    if (char === '(') parenDepth++;
-    if (char === ')') parenDepth--;
-    if (char === '[') bracketDepth++;
-    if (char === ']') bracketDepth--;
+    // Count braces and track positions
+    if (currentChar === '{') {
+      braceDepth++;
+      unclosedBraces.push({ line: currentLine, column: currentColumn });
+    }
+    if (currentChar === '}') {
+      braceDepth--;
+      if (unclosedBraces.length > 0) {
+        unclosedBraces.pop();
+      }
+    }
+    if (currentChar === '(') {
+      parenDepth++;
+      unclosedParens.push({ line: currentLine, column: currentColumn });
+    }
+    if (currentChar === ')') {
+      parenDepth--;
+      if (unclosedParens.length > 0) {
+        unclosedParens.pop();
+      }
+    }
+    if (currentChar === '[') {
+      bracketDepth++;
+      unclosedBrackets.push({ line: currentLine, column: currentColumn });
+    }
+    if (currentChar === ']') {
+      bracketDepth--;
+      if (unclosedBrackets.length > 0) {
+        unclosedBrackets.pop();
+      }
+    }
   }
   
   if (braceDepth > 0) {
-    errors.push(`Unclosed braces: ${braceDepth} opening brace(s) without closing`);
+    const locations = unclosedBraces.slice(-braceDepth).map(loc => `line ${loc.line}, column ${loc.column}`).join(', ');
+    errors.push(`Unclosed braces: ${braceDepth} opening brace(s) without closing (at ${locations})`);
   }
   if (braceDepth < 0) {
     errors.push(`Extra closing braces: ${Math.abs(braceDepth)} closing brace(s) without opening`);
   }
   if (parenDepth > 0) {
-    errors.push(`Unclosed parentheses: ${parenDepth} opening paren(s) without closing`);
+    const locations = unclosedParens.slice(-parenDepth).map(loc => `line ${loc.line}, column ${loc.column}`).join(', ');
+    errors.push(`Unclosed parentheses: ${parenDepth} opening paren(s) without closing (at ${locations})`);
   }
   if (parenDepth < 0) {
     errors.push(`Extra closing parentheses: ${Math.abs(parenDepth)} closing paren(s) without opening`);
   }
   if (bracketDepth > 0) {
-    errors.push(`Unclosed brackets: ${bracketDepth} opening bracket(s) without closing`);
+    const locations = unclosedBrackets.slice(-bracketDepth).map(loc => `line ${loc.line}, column ${loc.column}`).join(', ');
+    errors.push(`Unclosed brackets: ${bracketDepth} opening bracket(s) without closing (at ${locations})`);
   }
   if (bracketDepth < 0) {
     errors.push(`Extra closing brackets: ${Math.abs(bracketDepth)} closing bracket(s) without opening`);
