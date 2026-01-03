@@ -12,7 +12,7 @@ describe('KakarotConfigSchema', () => {
 
     expect(result.apiKey).toBe('test-api-key');
     expect(result.framework).toBe('jest');
-    expect(result.maxFixAttempts).toBe(3); // default
+    expect(result.maxFixAttempts).toBe(5); // default
     expect(result.testLocation).toBe('separate'); // default
   });
 
@@ -113,7 +113,7 @@ describe('KakarotConfigSchema', () => {
     const config = {
       apiKey: 'test-api-key',
       framework: 'jest' as const,
-      maxFixAttempts: 10, // exceeds max
+      maxFixAttempts: 11, // exceeds max (10)
     };
 
     expect(() => KakarotConfigSchema.parse(config)).toThrow();
@@ -127,7 +127,7 @@ describe('KakarotConfigSchema', () => {
 
     const result = KakarotConfigSchema.parse(config);
 
-    expect(result.maxFixAttempts).toBe(3);
+    expect(result.maxFixAttempts).toBe(5);
     expect(result.mode).toBe('pr');
     expect(result.testLocation).toBe('separate');
     expect(result.testDirectory).toBe('__tests__');
