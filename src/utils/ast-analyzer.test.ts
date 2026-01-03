@@ -87,6 +87,94 @@ class Calculator {
     expect(targets).toHaveLength(1);
     expect(targets[0].functionName).toBe('subtract');
     expect(targets[0].functionType).toBe('class-method');
+    expect(targets[0].className).toBe('Calculator');
+  });
+
+  it('should detect class name for class methods', async () => {
+    const code = `
+export class DataProcessor {
+  async processBatch(items: any[]) {
+    return items;
+  }
+}
+`;
+    const changedRanges: ChangedRange[] = [
+      { start: 3, end: 5, type: 'addition' },
+    ];
+
+    const targets = await analyzeFile(
+      'src/dataProcessor.ts',
+      code,
+      changedRanges,
+      'main',
+      mockGithubClient,
+      '__tests__'
+    );
+
+    expect(targets).toHaveLength(1);
+    expect(targets[0].className).toBe('DataProcessor');
+    expect(targets[0].functionName).toBe('processBatch');
+  });
+
+  it('should detect private methods', async () => {
+    const code = `
+export class DataProcessor {
+  private validateInput(input: string) {
+    return input.length > 0;
+  }
+  
+  public process(input: string) {
+    return this.validateInput(input);
+  }
+}
+`;
+    const changedRanges: ChangedRange[] = [
+      { start: 3, end: 5, type: 'addition' },
+    ];
+
+    const targets = await analyzeFile(
+      'src/dataProcessor.ts',
+      code,
+      changedRanges,
+      'main',
+      mockGithubClient,
+      '__tests__'
+    );
+
+    const privateMethod = targets.find(t => t.functionName === 'validateInput');
+    expect(privateMethod).toBeDefined();
+    expect(privateMethod?.isPrivate).toBe(true);
+    expect(privateMethod?.className).toBe('DataProcessor');
+  });
+
+  it('should detect private properties in class', async () => {
+    const code = `
+export class DataProcessor {
+  private cache: Map<string, unknown>;
+  private maxCacheSize: number = 100;
+  
+  public getCacheStats() {
+    return { size: this.cache.size };
+  }
+}
+`;
+    const changedRanges: ChangedRange[] = [
+      { start: 5, end: 7, type: 'addition' },
+    ];
+
+    const targets = await analyzeFile(
+      'src/dataProcessor.ts',
+      code,
+      changedRanges,
+      'main',
+      mockGithubClient,
+      '__tests__'
+    );
+
+    const publicMethod = targets.find(t => t.functionName === 'getCacheStats');
+    expect(publicMethod).toBeDefined();
+    expect(publicMethod?.classPrivateProperties).toContain('cache');
+    expect(publicMethod?.classPrivateProperties).toContain('maxCacheSize');
   });
 
   it('should only extract functions that overlap with changes', async () => {
