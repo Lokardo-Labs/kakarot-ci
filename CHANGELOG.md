@@ -1,3 +1,10 @@
+## [0.10.4](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.3...v0.10.4) (2026-01-03)
+
+
+### Bug Fixes
+
+* Adding a consolidator utility for imports ([#39](https://github.com/Lokardo-Labs/kakarot-ci/issues/39)) ([9ac63b7](https://github.com/Lokardo-Labs/kakarot-ci/commit/9ac63b72fc7401ace38f1a114b0f59da4cdf05b3))
+
 ## [0.10.3](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.2...v0.10.3) (2026-01-03)
 
 
