@@ -716,8 +716,3 @@ If you need to migrate from one config format to another:
 Contributions are welcome! Please feel free to submit a Pull Request.
 
 **Note**: This project is maintained by a single person as a side project. While I do my best to respond to issues and review PRs, response times may vary. Your patience and understanding are appreciated!
-
-## License
-
-[BUSL-1.1](LICENSE)
-:)
