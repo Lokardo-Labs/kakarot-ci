@@ -1,13 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { writeTestFiles } from './test-file-writer.js';
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, renameSync } from 'fs';
 import { debug } from './logger.js';
+import { validateTestFile } from './file-validator.js';
 
 // Mock fs and path modules
 vi.mock('fs', () => ({
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
   existsSync: vi.fn(),
+  renameSync: vi.fn(),
+  unlinkSync: vi.fn(),
+}));
+
+vi.mock('./file-validator.js', () => ({
+  validateTestFile: vi.fn(),
 }));
 
 vi.mock('path', () => ({
@@ -36,95 +43,130 @@ describe('writeTestFiles', () => {
     vi.restoreAllMocks();
   });
 
-  it('should write test files to disk', () => {
+  it('should write test files to disk', async () => {
     const testFiles = new Map([
       ['__tests__/utils.test.ts', { content: 'test code', targets: ['foo'] }],
     ]);
     const projectRoot = '/project';
+    
+    vi.mocked(validateTestFile).mockResolvedValue({ valid: true, errors: [], warnings: [] });
+    vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true); // dir doesn't exist, temp file exists
 
-    const result = writeTestFiles(testFiles, projectRoot);
+    const result = await writeTestFiles(testFiles, projectRoot);
 
     expect(writeFileSync).toHaveBeenCalledWith(
-      '/project/__tests__/utils.test.ts',
+      '/project/__tests__/utils.test.ts.tmp',
       'test code',
       'utf-8'
     );
-    expect(result).toEqual(['__tests__/utils.test.ts']);
+    expect(renameSync).toHaveBeenCalledWith(
+      '/project/__tests__/utils.test.ts.tmp',
+      '/project/__tests__/utils.test.ts'
+    );
+    expect(result.writtenPaths).toEqual(['__tests__/utils.test.ts']);
+    expect(result.failedPaths).toEqual([]);
   });
 
-  it('should create directory if it does not exist', () => {
+  it('should create directory if it does not exist', async () => {
     const testFiles = new Map([
       ['__tests__/utils.test.ts', { content: 'test code', targets: ['foo'] }],
     ]);
     const projectRoot = '/project';
-    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true); // dir doesn't exist, temp file exists
+    vi.mocked(validateTestFile).mockResolvedValue({ valid: true, errors: [], warnings: [] });
 
-    writeTestFiles(testFiles, projectRoot);
+    await writeTestFiles(testFiles, projectRoot);
 
     expect(mkdirSync).toHaveBeenCalledWith('/project/__tests__', { recursive: true });
     expect(vi.mocked(debug)).toHaveBeenCalledWith('Created directory: /project/__tests__');
   });
 
-  it('should not create directory if it exists', () => {
+  it('should not create directory if it exists', async () => {
     const testFiles = new Map([
       ['__tests__/utils.test.ts', { content: 'test code', targets: ['foo'] }],
     ]);
     const projectRoot = '/project';
-    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(existsSync).mockReturnValueOnce(true).mockReturnValueOnce(true); // dir exists, temp file exists
+    vi.mocked(validateTestFile).mockResolvedValue({ valid: true, errors: [], warnings: [] });
 
-    writeTestFiles(testFiles, projectRoot);
+    await writeTestFiles(testFiles, projectRoot);
 
     expect(mkdirSync).not.toHaveBeenCalled();
   });
 
-  it('should write multiple test files', () => {
+  it('should write multiple test files', async () => {
     const testFiles = new Map([
       ['__tests__/utils.test.ts', { content: 'test 1', targets: ['foo'] }],
       ['__tests__/helper.test.ts', { content: 'test 2', targets: ['bar'] }],
     ]);
     const projectRoot = '/project';
+    vi.mocked(existsSync).mockReturnValue(false).mockReturnValue(true).mockReturnValue(false).mockReturnValue(true);
+    vi.mocked(validateTestFile).mockResolvedValue({ valid: true, errors: [], warnings: [] });
 
-    const result = writeTestFiles(testFiles, projectRoot);
+    const result = await writeTestFiles(testFiles, projectRoot);
 
     expect(writeFileSync).toHaveBeenCalledTimes(2);
-    expect(result).toHaveLength(2);
-    expect(result).toContain('__tests__/utils.test.ts');
-    expect(result).toContain('__tests__/helper.test.ts');
+    expect(result.writtenPaths).toHaveLength(2);
+    expect(result.writtenPaths).toContain('__tests__/utils.test.ts');
+    expect(result.writtenPaths).toContain('__tests__/helper.test.ts');
   });
 
-  it('should handle nested directories', () => {
+  it('should handle nested directories', async () => {
     const testFiles = new Map([
       ['src/utils/__tests__/helper.test.ts', { content: 'test code', targets: ['foo'] }],
     ]);
     const projectRoot = '/project';
-    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true);
+    vi.mocked(validateTestFile).mockResolvedValue({ valid: true, errors: [], warnings: [] });
 
-    writeTestFiles(testFiles, projectRoot);
+    await writeTestFiles(testFiles, projectRoot);
 
     expect(mkdirSync).toHaveBeenCalledWith('/project/src/utils/__tests__', { recursive: true });
   });
 
-  it('should log debug messages', () => {
+  it('should log debug messages', async () => {
     const testFiles = new Map([
       ['__tests__/utils.test.ts', { content: 'test code', targets: ['foo'] }],
     ]);
     const projectRoot = '/project';
+    vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true);
+    vi.mocked(validateTestFile).mockResolvedValue({ valid: true, errors: [], warnings: [] });
 
-    writeTestFiles(testFiles, projectRoot);
+    await writeTestFiles(testFiles, projectRoot);
 
     expect(vi.mocked(debug)).toHaveBeenCalledWith('Wrote test file: __tests__/utils.test.ts');
   });
 
-  it('should handle files in root directory', () => {
+  it('should handle files in root directory', async () => {
     const testFiles = new Map([
       ['index.test.ts', { content: 'test code', targets: ['foo'] }],
     ]);
     const projectRoot = '/project';
-    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(existsSync).mockReturnValueOnce(true).mockReturnValueOnce(true);
+    vi.mocked(validateTestFile).mockResolvedValue({ valid: true, errors: [], warnings: [] });
 
-    writeTestFiles(testFiles, projectRoot);
+    await writeTestFiles(testFiles, projectRoot);
 
-    expect(writeFileSync).toHaveBeenCalledWith('/project/index.test.ts', 'test code', 'utf-8');
+    expect(writeFileSync).toHaveBeenCalledWith('/project/index.test.ts.tmp', 'test code', 'utf-8');
+    expect(renameSync).toHaveBeenCalledWith('/project/index.test.ts.tmp', '/project/index.test.ts');
+  });
+  
+  it('should skip invalid files', async () => {
+    const testFiles = new Map([
+      ['__tests__/invalid.test.ts', { content: 'incomplete code {', targets: ['foo'] }],
+    ]);
+    const projectRoot = '/project';
+    vi.mocked(validateTestFile).mockResolvedValue({
+      valid: false,
+      errors: ['Syntax: Unclosed braces: 1 opening brace(s) without closing'],
+      warnings: [],
+    });
+
+    const result = await writeTestFiles(testFiles, projectRoot);
+
+    expect(writeFileSync).not.toHaveBeenCalled();
+    expect(result.writtenPaths).toEqual([]);
+    expect(result.failedPaths).toEqual(['__tests__/invalid.test.ts']);
   });
 });
 

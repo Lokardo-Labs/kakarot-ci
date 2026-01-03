@@ -14,6 +14,7 @@ import { readCoverageReport } from '../utils/coverage-reader.js';
 import type { CoverageDelta } from '../types/coverage.js';
 import { formatGeneratedCode, lintGeneratedCode } from '../utils/code-standards.js';
 import { findProjectRoot } from '../utils/config-loader.js';
+import { checkSyntaxCompleteness } from '../utils/file-validator.js';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { info, error, warn, success, progress } from '../utils/logger.js';
@@ -88,6 +89,7 @@ export async function generateTestsFromTargets(
   // Generate tests
   const testFiles = new Map<string, { content: string; targets: string[] }>();
   const testFileToTargetsMap: TestFileToTargetsMap = {}; // Map test files to their original targets
+  const privatePropertiesMap = new Map<string, string[]>(); // Map test files to their private properties
   let testsGenerated = 0;
   let testsFailed = 0;
   const errors: Array<{ target: string; error: string }> = [];
@@ -151,6 +153,12 @@ export async function generateTestsFromTargets(
         formattedCode = await lintGeneratedCode(formattedCode, projectRoot);
       }
 
+      // Track private properties for this test file
+      if (target.classPrivateProperties && target.classPrivateProperties.length > 0) {
+        const existing = privatePropertiesMap.get(testFilePath) || [];
+        privatePropertiesMap.set(testFilePath, [...new Set([...existing, ...target.classPrivateProperties])]);
+      }
+      
       // Store test file
       let fileData = testFiles.get(testFilePath);
       if (!fileData) {
@@ -159,11 +167,17 @@ export async function generateTestsFromTargets(
         testFileToTargetsMap[testFilePath] = [];
       } else {
         // Append with separator if base content exists
-        if (fileData.content && existingContent) {
-          fileData.content += '\n\n' + formattedCode;
-        } else {
-          fileData.content = formattedCode;
+        const newContent = fileData.content && existingContent
+          ? fileData.content + '\n\n' + formattedCode
+          : formattedCode;
+        
+        // Validate combined content before storing (basic syntax check)
+        const syntaxCheck = checkSyntaxCompleteness(newContent);
+        if (!syntaxCheck.valid) {
+          throw new Error(`Generated test code has syntax errors: ${syntaxCheck.errors.join('; ')}`);
         }
+        
+        fileData.content = newContent;
       }
       
       fileData.targets.push(target.functionName);
@@ -192,8 +206,27 @@ export async function generateTestsFromTargets(
   let testResults: TestResult[] | undefined = undefined;
 
   if (testFiles.size > 0) {
-    // Write test files to disk
-    const writtenPaths = writeTestFiles(testFiles, projectRoot);
+    // Write test files to disk with validation
+    const { writtenPaths, failedPaths } = await writeTestFiles(testFiles, projectRoot, privatePropertiesMap);
+    
+    // Update failed count for files that couldn't be written
+    if (failedPaths.length > 0) {
+      testsFailed += failedPaths.length;
+      failedPaths.forEach(path => {
+        const fileData = testFiles.get(path);
+        if (fileData) {
+          fileData.targets.forEach(target => {
+            errors.push({
+              target: `${path}:${target}`,
+              error: 'File validation failed (syntax errors, type errors, or private property access)',
+            });
+          });
+        }
+      });
+      
+      // Remove failed files from testFiles so they're not run
+      failedPaths.forEach(path => testFiles.delete(path));
+    }
     info(`Wrote ${writtenPaths.length} test file(s) to disk`);
 
     // Run tests and fix failures if not in scaffold mode
@@ -262,7 +295,11 @@ export async function generateTestsFromTargets(
           info(`Coverage delta: +${coverageDelta.lines.toFixed(1)}% lines, +${coverageDelta.functions.toFixed(1)}% functions`);
         }
       } else {
-        warn('Could not read coverage report. Check that coverage package is installed and coverage/coverage-final.json exists.');
+        warn('Could not read coverage report. Ensure:');
+        warn('  1. Coverage package is installed (@vitest/coverage-v8 for Vitest or @jest/coverage for Jest)');
+        warn('  2. Coverage is configured in your test framework config (vitest.config.ts or jest.config.js)');
+        warn('  3. Coverage reporter includes "json" (e.g., coverage.reporter: ["text", "json"])');
+        warn('  4. Tests ran successfully (coverage is generated after tests complete)');
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -408,16 +445,38 @@ async function runTestsAndFix(
           formattedCode = await lintGeneratedCode(formattedCode, projectRoot);
         }
 
+        // Get private properties for this test file
+        const targetsForFile = testFileToTargetsMap[testFile] || [];
+        const privateProperties = targetsForFile
+          .flatMap(t => t.classPrivateProperties || [])
+          .filter((v, i, a) => a.indexOf(v) === i); // Unique
+
+        // Validate fixed file before writing
+        const { validateTestFile } = await import('../utils/file-validator.js');
+        const validation = await validateTestFile(testFile, formattedCode, projectRoot, privateProperties);
+        
+        if (!validation.valid) {
+          warn(`Fixed test file validation failed for ${testFile}:`);
+          validation.errors.forEach(err => warn(`  - ${err}`));
+          continue; // Skip this fix, try again next iteration
+        }
+
         currentTestFiles.set(testFile, {
           content: formattedCode,
           targets: currentTestFiles.get(testFile)!.targets,
         });
 
-        // Update file on disk
+        // Update file on disk atomically
         const fs = await import('fs/promises');
         const path = await import('path');
         const fullPath = path.join(projectRoot, testFile);
-        await fs.writeFile(fullPath, formattedCode, 'utf-8');
+        const tempPath = fullPath + '.tmp';
+        
+        // Write to temp file first
+        await fs.writeFile(tempPath, formattedCode, 'utf-8');
+        
+        // Move to final location (atomic)
+        await fs.rename(tempPath, fullPath);
 
         fixedAny = true;
         info(`✓ Fixed test file: ${testFile}`);

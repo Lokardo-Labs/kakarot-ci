@@ -1,32 +1,75 @@
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, renameSync, unlinkSync } from 'fs';
 import { dirname, join } from 'path';
-import { debug } from './logger.js';
+import { debug, warn, error } from './logger.js';
+import { validateTestFile } from './file-validator.js';
 
 /**
- * Write test files to disk in the project directory
+ * Write test files to disk atomically with validation
  */
-export function writeTestFiles(
+export async function writeTestFiles(
   testFiles: Map<string, { content: string; targets: string[] }>,
-  projectRoot: string
-): string[] {
+  projectRoot: string,
+  privatePropertiesMap?: Map<string, string[]>
+): Promise<{ writtenPaths: string[]; failedPaths: string[] }> {
   const writtenPaths: string[] = [];
+  const failedPaths: string[] = [];
 
   for (const [relativePath, fileData] of testFiles.entries()) {
     const fullPath = join(projectRoot, relativePath);
+    const tempPath = fullPath + '.tmp';
     const dir = dirname(fullPath);
 
-    // Create directory if it doesn't exist
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-      debug(`Created directory: ${dir}`);
-    }
+    try {
+      // Create directory if it doesn't exist
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+        debug(`Created directory: ${dir}`);
+      }
 
-    // Write test file
-    writeFileSync(fullPath, fileData.content, 'utf-8');
-    writtenPaths.push(relativePath);
-    debug(`Wrote test file: ${relativePath}`);
+      // Validate file before writing
+      const privateProperties = privatePropertiesMap?.get(relativePath);
+      const validation = await validateTestFile(relativePath, fileData.content, projectRoot, privateProperties);
+      
+      if (!validation.valid) {
+        error(`Test file validation failed for ${relativePath}:`);
+        validation.errors.forEach(err => error(`  - ${err}`));
+        failedPaths.push(relativePath);
+        continue; // Skip writing invalid file
+      }
+      
+      if (validation.warnings.length > 0) {
+        validation.warnings.forEach(w => warn(`  - ${w}`));
+      }
+
+      // Write to temp file first (atomic write)
+      writeFileSync(tempPath, fileData.content, 'utf-8');
+      
+      // Validate temp file exists and is readable
+      if (!existsSync(tempPath)) {
+        throw new Error('Failed to write temp file');
+      }
+      
+      // Move temp file to final location (atomic)
+      renameSync(tempPath, fullPath);
+      
+      writtenPaths.push(relativePath);
+      debug(`Wrote test file: ${relativePath}`);
+    } catch (err) {
+      // Clean up temp file if it exists
+      try {
+        if (existsSync(tempPath)) {
+          unlinkSync(tempPath);
+        }
+      } catch {
+        // Ignore cleanup errors
+      }
+      
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      error(`Failed to write test file ${relativePath}: ${errorMessage}`);
+      failedPaths.push(relativePath);
+    }
   }
 
-  return writtenPaths;
+  return { writtenPaths, failedPaths };
 }
 

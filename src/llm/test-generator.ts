@@ -98,12 +98,13 @@ export class TestGenerator {
         // Continue anyway, as some issues might be false positives
       }
 
-      // Additional validation for private property access
+      // Additional validation for private property access - fail generation if detected
       if (target.classPrivateProperties && target.classPrivateProperties.length > 0) {
         const privateValidation = validateTestCodeForPrivateAccess(testCode, target.classPrivateProperties);
         if (!privateValidation.valid) {
-          warn(`Private property access detected for ${target.functionName}: ${privateValidation.errors.join('; ')}`);
-          // This is a warning, not an error, as TypeScript will catch it at compile time
+          const errorMessage = `Private property access detected for ${target.functionName}: ${privateValidation.errors.join('; ')}. Tests must not access private properties directly.`;
+          error(errorMessage);
+          throw new Error(errorMessage);
         }
       }
 

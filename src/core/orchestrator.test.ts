@@ -77,7 +77,7 @@ describe('orchestrator', () => {
     vi.mocked(createTestRunner).mockReturnValue(mockTestRunner as never);
     vi.mocked(findProjectRoot).mockResolvedValue('/project');
     vi.mocked(detectPackageManager).mockReturnValue('npm');
-    vi.mocked(writeTestFiles).mockReturnValue(['__tests__/test.test.ts']);
+    vi.mocked(writeTestFiles).mockResolvedValue({ writtenPaths: ['__tests__/test.test.ts'], failedPaths: [] });
     vi.mocked(readCoverageReport).mockReturnValue(null);
   });
 
