@@ -1,3 +1,10 @@
+## [0.10.2](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.1...v0.10.2) (2026-01-03)
+
+
+### Bug Fixes
+
+* Adding in loop fix for the fix loop  ([#37](https://github.com/Lokardo-Labs/kakarot-ci/issues/37)) ([0974082](https://github.com/Lokardo-Labs/kakarot-ci/commit/097408204107d266b714398c0754695334510e1a))
+
 ## [0.10.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.0...v0.10.1) (2026-01-03)
 
 
