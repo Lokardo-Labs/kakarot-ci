@@ -152,6 +152,27 @@ Kakarot CI can be configured via:
   - Example: `5`
   - Note: Kakarot CI automatically optimizes context to fit within model limits during fix attempts
 
+- **`requestDelay`** (number, optional, default: `0`)
+  - Delay in milliseconds between API requests to avoid rate limits
+  - Useful when hitting rate limits frequently
+  - Example: `1000` (1 second delay between requests)
+
+- **`maxRetries`** (number, optional, default: `3`)
+  - Maximum number of retry attempts for rate limit errors (429) and server errors (5xx)
+  - Uses exponential backoff with retry-after header support
+  - Example: `5`
+
+**Rate Limit Recommendations**:
+If you're hitting rate limits frequently, configure:
+```javascript
+{
+  requestDelay: 2000,  // 2 seconds between requests
+  maxRetries: 5,       // More retry attempts
+  maxTestsPerPR: 20,   // Process fewer tests at once
+}
+```
+Kakarot CI automatically retries on rate limit errors with exponential backoff, but adding delays between requests helps prevent hitting limits in the first place.
+
 #### Test Framework
 
 - **`framework`** (string, required)
@@ -273,7 +294,9 @@ const config = {
   
   // Limits and behavior
   maxTestsPerPR: 50,
-  maxFixAttempts: 3,
+  maxFixAttempts: 5,
+  requestDelay: 1000,  // Delay in ms between requests to avoid rate limits (default: 0)
+  maxRetries: 3,       // Max retries for rate limits (default: 3)
   
   // GitHub integration
   enableAutoCommit: true,
@@ -300,7 +323,9 @@ module.exports = config;
     "**/node_modules/**",
     "**/dist/**"
   ],
-  "maxFixAttempts": 3,
+  "maxFixAttempts": 5,
+  "requestDelay": 1000,
+  "maxRetries": 3,
   "enableAutoCommit": true,
   "commitStrategy": "branch-pr",
   "enablePRComments": true
@@ -458,133 +483,6 @@ Options:
 - `PR_NUMBER`: Pull request number (alternative to `--pr` flag)
 - `KAKAROT_DEBUG`: Enable debug logging (`true`/`false`)
 
-## Troubleshooting
-
-### Common Issues
-
-#### "LLM API key is required"
-**Problem**: The API key is missing or not properly configured.
-
-**Solutions**:
-- Set `KAKAROT_API_KEY` environment variable
-- Add `apiKey` to your config file (`kakarot.config.js` or `.kakarot-ci.config.json`)
-- Verify the API key is valid for your chosen provider (OpenAI, Anthropic, or Google)
-
-#### "GitHub token is required"
-**Problem**: GitHub token is missing when trying to use GitHub features.
-
-**Solutions**:
-- Set `GITHUB_TOKEN` environment variable
-- Add `githubToken` to your config file
-- Use `--token` CLI flag
-- For GitHub Actions, ensure `GITHUB_TOKEN` is available (or use a PAT if your org restricts permissions)
-
-#### "Pull request number is required"
-**Problem**: PR number cannot be detected automatically.
-
-**Solutions**:
-- Use `--pr <number>` CLI flag
-- Set `PR_NUMBER` environment variable
-- In GitHub Actions, ensure `GITHUB_EVENT_PATH` is set (should be automatic)
-
-#### "Invalid repository format"
-**Problem**: Repository owner/repo format is incorrect.
-
-**Solutions**:
-- Use format: `owner/repo` (e.g., `myorg/myrepo`)
-- Set `GITHUB_REPOSITORY` environment variable
-- Use `--owner` and `--repo` CLI flags separately
-
-#### "Unsupported test framework"
-**Problem**: Framework is not `jest` or `vitest`.
-
-**Solutions**:
-- Set `framework: 'jest'` or `framework: 'vitest'` in config
-- Ensure Jest or Vitest is installed in your project
-- Verify your test framework is properly configured
-
-#### "No valid JSON output from Vitest/Jest"
-**Problem**: Test runner output cannot be parsed.
-
-**Solutions**:
-- Ensure test framework is properly installed
-- Check that test files are valid
-- Enable debug mode (`KAKAROT_DEBUG=true`) to see raw output
-- Verify package manager detection (npm/yarn/pnpm)
-
-#### Tests fail after generation
-**Problem**: Generated tests don't pass.
-
-**Solutions**:
-- Increase `maxFixAttempts` in config (default: 5)
-- Check test output for specific errors
-- Review generated tests manually
-- Ensure your code is testable (no circular dependencies, proper exports)
-- Check that mocks are set up correctly if your code has external dependencies
-
-#### "OpenAI/Anthropic/Google API error: 401"
-**Problem**: Invalid API key or authentication failure.
-
-**Solutions**:
-- Verify API key is correct
-- Check API key has proper permissions
-- Ensure you're using the correct key format for your provider
-- Check if API key has expired or been revoked
-
-#### "OpenAI/Anthropic/Google API error: 429"
-**Problem**: Rate limit exceeded.
-
-**Solutions**:
-- Wait before retrying
-- Reduce `maxTestsPerPR` to process fewer tests at once
-- Check your API usage limits
-- Consider using a different model or provider
-
-#### "Context length exceeded" or "maximum context length"
-**Problem**: Fix loop fails due to context being too large for the model.
-
-**Solutions**:
-- Kakarot CI automatically optimizes context, but if it still exceeds limits:
-  - Use a model with larger context window (e.g., `gpt-4-turbo`, `gpt-4o`, `claude-3-opus`)
-  - Reduce the size of files being tested
-  - Split large changes into smaller PRs
-- The error message will suggest appropriate models
-
-#### "Could not read coverage report"
-**Problem**: Coverage report not found after running tests.
-
-**Solutions**:
-- Ensure coverage package is installed (`@vitest/coverage-v8` or `@jest/coverage`)
-- Verify coverage is enabled in your test framework config
-- Check that `coverage/coverage-final.json` exists after running tests
-- In full mode, ensure `enableCoverage: true` is set in config
-- Coverage runs automatically in full mode when enabled, even if some tests fail
-
-#### "Expected file but got directory"
-**Problem**: Path points to a directory instead of a file.
-
-**Solutions**:
-- Check your `includePatterns` and `excludePatterns` in config
-- Verify file paths are correct
-- Ensure test files aren't being included in source file patterns
-
-#### Commit fails in GitHub Actions
-**Problem**: Cannot commit generated tests.
-
-**Solutions**:
-- Ensure `contents: write` permission is set in workflow
-- Use a PAT if your organization restricts `GITHUB_TOKEN` permissions
-- Check that the branch is not protected
-- Verify `enableAutoCommit` is `true` in config
-
-#### TypeScript config files not working
-**Problem**: `kakarot.config.ts` files are not recognized.
-
-**Solutions**:
-- Use JavaScript (`.js`) or JSON (`.json`) config files instead
-- TypeScript config files require transpilation which is not available in the compiled package
-- Use `kakarot.config.js` or `.kakarot-ci.config.json`
-
 ### Debug Mode
 
 Enable debug logging to troubleshoot issues:
@@ -705,6 +603,13 @@ A: PR comments include:
 
 **Q: How many tests can be generated per PR?**
 A: Default limit is 50 (`maxTestsPerPR`). You can increase this, but be mindful of API rate limits and costs.
+
+**Q: What if I hit rate limits?**
+A: Kakarot CI automatically retries with exponential backoff. To prevent rate limits:
+- Set `requestDelay: 2000` (2 seconds between requests)
+- Increase `maxRetries: 5` for more retry attempts
+- Reduce `maxTestsPerPR: 20` to process fewer tests at once
+- The tool respects `retry-after` headers from API responses
 
 **Q: How long does test generation take?**
 A: Depends on:

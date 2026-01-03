@@ -96,6 +96,11 @@ export async function generateTestsFromTargets(
     const target = limitedTargets[i];
     progress(i + 1, limitedTargets.length, `Generating test for ${target.functionName}`);
 
+    // Add delay between requests to avoid rate limits (if configured)
+    if (i > 0 && config.requestDelay && config.requestDelay > 0) {
+      await new Promise(resolve => setTimeout(resolve, config.requestDelay));
+    }
+
     try {
       const testFilePath = getTestFilePath(target, config);
       

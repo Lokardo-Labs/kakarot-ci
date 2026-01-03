@@ -8,7 +8,7 @@ import { createLLMProvider } from './factory.js';
 import { buildTestGenerationPrompt } from './prompts/test-generation.js';
 import { buildTestScaffoldPrompt } from './prompts/test-scaffold.js';
 import { buildTestFixPrompt } from './prompts/test-fix.js';
-import { parseTestCode, validateTestCodeStructure } from './parser.js';
+import { parseTestCode, validateTestCodeStructure, validateTestCodeForPrivateAccess } from './parser.js';
 import { optimizeFixContext } from '../utils/context-optimizer.js';
 import { info, warn, error, debug } from '../utils/logger.js';
 
@@ -20,7 +20,7 @@ export class TestGenerator {
   constructor(
     config: Pick<
       KakarotConfig,
-      'apiKey' | 'provider' | 'model' | 'maxTokens' | 'maxFixAttempts' | 'temperature' | 'fixTemperature' | 'customPrompts'
+      'apiKey' | 'provider' | 'model' | 'maxTokens' | 'maxFixAttempts' | 'temperature' | 'fixTemperature' | 'customPrompts' | 'maxRetries'
     >
   ) {
     this.provider = createLLMProvider(config);
@@ -96,6 +96,15 @@ export class TestGenerator {
       if (!validation.valid) {
         warn(`Test code validation warnings for ${target.functionName}: ${validation.errors.join(', ')}`);
         // Continue anyway, as some issues might be false positives
+      }
+
+      // Additional validation for private property access
+      if (target.classPrivateProperties && target.classPrivateProperties.length > 0) {
+        const privateValidation = validateTestCodeForPrivateAccess(testCode, target.classPrivateProperties);
+        if (!privateValidation.valid) {
+          warn(`Private property access detected for ${target.functionName}: ${privateValidation.errors.join('; ')}`);
+          // This is a warning, not an error, as TypeScript will catch it at compile time
+        }
       }
 
       debug(`Successfully generated test code for ${target.functionName}`);
