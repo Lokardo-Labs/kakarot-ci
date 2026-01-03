@@ -1,3 +1,15 @@
+# [0.8.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.7.1...v0.8.0) (2026-01-03)
+
+
+### Bug Fixes
+
+* General lower priority enhancements ([#29](https://github.com/Lokardo-Labs/kakarot-ci/issues/29)) ([fc46f0d](https://github.com/Lokardo-Labs/kakarot-ci/commit/fc46f0de97cddf80b09798f15f224cbdebaedc82))
+
+
+### Features
+
+* Adding scafolding mode and full mode ([#26](https://github.com/Lokardo-Labs/kakarot-ci/issues/26)) ([2aaef23](https://github.com/Lokardo-Labs/kakarot-ci/commit/2aaef23240761bc530f1c750ede24592619188c5))
+
 ## [0.7.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.7.0...v0.7.1) (2025-11-30)
 
 
