@@ -531,7 +531,15 @@ async function runTestsAndFix(
 
         // Validate fixed file before writing
         const { validateTestFile } = await import('../utils/file-validator.js');
-        const validation = await validateTestFile(testFile, formattedCode, projectRoot, privateProperties);
+        let validation = await validateTestFile(testFile, formattedCode, projectRoot, privateProperties);
+        
+        // If missing imports detected, fix them automatically
+        if (validation.missingImports && validation.missingImports.length > 0) {
+          const { fixMissingImports } = await import('../utils/import-fixer.js');
+          formattedCode = fixMissingImports(formattedCode, validation.missingImports, framework);
+          // Re-validate after fixing imports
+          validation = await validateTestFile(testFile, formattedCode, projectRoot, privateProperties);
+        }
         
         if (!validation.valid) {
           warn(`Fixed test file validation failed for ${testFile}:`);

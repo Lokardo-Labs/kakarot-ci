@@ -28,7 +28,18 @@ export async function writeTestFiles(
 
       // Validate file before writing
       const privateProperties = privatePropertiesMap?.get(relativePath);
-      const validation = await validateTestFile(relativePath, fileData.content, projectRoot, privateProperties);
+      let validation = await validateTestFile(relativePath, fileData.content, projectRoot, privateProperties);
+      
+      // If missing imports detected, fix them automatically
+      if (validation.missingImports && validation.missingImports.length > 0) {
+        const { fixMissingImports } = await import('./import-fixer.js');
+        // Detect framework from file content
+        const isVitest = fileData.content.includes("from 'vitest'") || fileData.content.includes('from "vitest"');
+        const framework = isVitest ? 'vitest' : 'jest';
+        fileData.content = fixMissingImports(fileData.content, validation.missingImports, framework);
+        // Re-validate after fixing imports
+        validation = await validateTestFile(relativePath, fileData.content, projectRoot, privateProperties);
+      }
       
       if (!validation.valid) {
         error(`Test file validation failed for ${relativePath}:`);

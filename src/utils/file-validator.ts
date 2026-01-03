@@ -13,6 +13,7 @@ export interface FileValidationResult {
   valid: boolean;
   errors: string[];
   warnings: string[];
+  missingImports?: string[]; // Missing imports detected from type checking
 }
 
 /**
@@ -164,70 +165,110 @@ export function checkSyntaxCompleteness(code: string): { valid: boolean; errors:
 async function validateTypeScript(
   filePath: string,
   projectRoot: string
-): Promise<{ valid: boolean; errors: string[] }> {
+): Promise<{ valid: boolean; errors: string[]; missingImports?: string[] }> {
   const errors: string[] = [];
+  const missingImports: string[] = [];
   
   try {
-    // Check if TypeScript is available
-    const {  stderr } = await execAsync(
-      `npx tsc --noEmit --skipLibCheck "${filePath}"`,
-      {
+    // Use project's tsconfig.json if available, otherwise use default settings
+    const { existsSync } = await import('fs');
+    const { join } = await import('path');
+    const tsconfigPath = join(projectRoot, 'tsconfig.json');
+    const hasTsConfig = existsSync(tsconfigPath);
+    
+    // Build command - use project config if available
+    const command = hasTsConfig
+      ? `npx tsc --noEmit --project "${tsconfigPath}" "${filePath}"`
+      : `npx tsc --noEmit --skipLibCheck --esModuleInterop "${filePath}"`;
+    
+    try {
+      const { stderr } = await execAsync(command, {
         cwd: projectRoot,
         maxBuffer: 10 * 1024 * 1024, // 10MB
-      }
-    );
-    
-    if (stderr && stderr.trim().length > 0) {
-      // TypeScript errors are in stderr
-      const errorLines = stderr.split('\n').filter(line => 
-        line.includes('error TS') || line.includes('error:')
-      );
+      });
       
-      if (errorLines.length > 0) {
-        // Extract key errors (limit to first 5 to avoid overwhelming)
-        const keyErrors = errorLines.slice(0, 5).map(line => {
-          // Extract error message (after error code)
-          const match = line.match(/error (TS\d+|:)\s*(.+)/);
-          return match ? match[2].trim() : line.trim();
-        });
-        
-        errors.push(...keyErrors);
-        if (errorLines.length > 5) {
-          errors.push(`... and ${errorLines.length - 5} more error(s)`);
-        }
-      }
-    }
-  } catch (err: unknown) {
-    // TypeScript compiler returns non-zero on errors, which throws
-    if (err && typeof err === 'object' && 'stderr' in err) {
-      const stderr = (err as { stderr: string }).stderr;
-      if (stderr) {
+      if (stderr && stderr.trim().length > 0) {
+        // TypeScript errors are in stderr
         const errorLines = stderr.split('\n').filter(line => 
           line.includes('error TS') || line.includes('error:')
         );
         
         if (errorLines.length > 0) {
-          const keyErrors = errorLines.slice(0, 5).map(line => {
+          // Extract key errors and detect missing imports
+          const keyErrors = errorLines.slice(0, 10).map(line => {
+            // Extract error message (after error code)
             const match = line.match(/error (TS\d+|:)\s*(.+)/);
             return match ? match[2].trim() : line.trim();
           });
           
+          // Detect missing imports from "Cannot find name" errors
+          for (const errorLine of errorLines) {
+            // Match: "error TS2304: Cannot find name 'beforeEach'."
+            const missingNameMatch = errorLine.match(/Cannot find name ['"]([^'"]+)['"]/);
+            if (missingNameMatch) {
+              const missingName = missingNameMatch[1];
+              // Check if it's a common test framework function that should be imported
+              const testFrameworkFunctions = ['describe', 'it', 'test', 'expect', 'beforeEach', 'afterEach', 'beforeAll', 'afterAll', 'vi', 'jest'];
+              if (testFrameworkFunctions.includes(missingName)) {
+                missingImports.push(missingName);
+              }
+            }
+          }
+          
           errors.push(...keyErrors);
-          if (errorLines.length > 5) {
-            errors.push(`... and ${errorLines.length - 5} more error(s)`);
+          if (errorLines.length > 10) {
+            errors.push(`... and ${errorLines.length - 10} more error(s)`);
           }
         }
       }
-    } else {
-      // If TypeScript isn't available or other error, just warn
-      warn(`Could not run TypeScript validation: ${err instanceof Error ? err.message : String(err)}`);
-      return { valid: true, errors: [] }; // Don't fail if TypeScript isn't available
+    } catch (execErr: unknown) {
+      // TypeScript compiler returns non-zero on errors, which throws
+      if (execErr && typeof execErr === 'object' && 'stderr' in execErr) {
+        const stderr = (execErr as { stderr: string }).stderr;
+        if (stderr) {
+          const errorLines = stderr.split('\n').filter(line => 
+            line.includes('error TS') || line.includes('error:')
+          );
+          
+          if (errorLines.length > 0) {
+            const keyErrors = errorLines.slice(0, 10).map(line => {
+              const match = line.match(/error (TS\d+|:)\s*(.+)/);
+              return match ? match[2].trim() : line.trim();
+            });
+            
+            // Detect missing imports
+            for (const errorLine of errorLines) {
+              const missingNameMatch = errorLine.match(/Cannot find name ['"]([^'"]+)['"]/);
+              if (missingNameMatch) {
+                const missingName = missingNameMatch[1];
+                const testFrameworkFunctions = ['describe', 'it', 'test', 'expect', 'beforeEach', 'afterEach', 'beforeAll', 'afterAll', 'vi', 'jest'];
+                if (testFrameworkFunctions.includes(missingName)) {
+                  missingImports.push(missingName);
+                }
+              }
+            }
+            
+            errors.push(...keyErrors);
+            if (errorLines.length > 10) {
+              errors.push(`... and ${errorLines.length - 10} more error(s)`);
+            }
+          }
+        }
+      } else {
+        // If TypeScript isn't available or other error, just warn
+        warn(`Could not run TypeScript validation: ${execErr instanceof Error ? execErr.message : String(execErr)}`);
+        return { valid: true, errors: [], missingImports: [] }; // Don't fail if TypeScript isn't available
+      }
     }
+  } catch (err) {
+    warn(`Could not run TypeScript validation: ${err instanceof Error ? err.message : String(err)}`);
+    return { valid: true, errors: [], missingImports: [] };
   }
   
   return {
     valid: errors.length === 0,
     errors,
+    missingImports: missingImports.length > 0 ? [...new Set(missingImports)] : undefined,
   };
 }
 
@@ -281,6 +322,7 @@ export async function validateTestFile(
   // 3. TypeScript validation (if available)
   // Write to temp file first for validation
   const tempPath = filePath + '.tmp';
+  let missingImports: string[] | undefined = undefined;
   try {
     const fs = await import('fs/promises');
     await fs.writeFile(join(projectRoot, tempPath), content, 'utf-8');
@@ -288,6 +330,11 @@ export async function validateTestFile(
     const tsCheck = await validateTypeScript(tempPath, projectRoot);
     if (!tsCheck.valid) {
       errors.push(...tsCheck.errors.map(e => `Type error: ${e}`));
+      if (tsCheck.missingImports && tsCheck.missingImports.length > 0) {
+        missingImports = tsCheck.missingImports;
+        // Add specific error about missing imports
+        errors.push(`Missing imports: ${missingImports.join(', ')}. These should be imported from the test framework.`);
+      }
     }
     
     // Clean up temp file
@@ -305,6 +352,7 @@ export async function validateTestFile(
     valid: errors.length === 0,
     errors,
     warnings,
+    missingImports, // Include missing imports in result for automatic fixing
   };
 }
 
