@@ -151,6 +151,10 @@ Kakarot CI can be configured via:
   - Example: `0.3`
 
 - **`maxFixAttempts`** (number, optional, default: `5`)
+  - Maximum number of fix attempts for failing tests
+  - Set to `-1` for infinite attempts (no limit)
+  - No upper limit (previously capped at 10)
+  - Example: `5` (default), `10`, `-1` (infinite)
   - Maximum number of attempts to fix failing tests (0-10)
   - Example: `5`
   - Note: Kakarot CI automatically optimizes context to fit within model limits during fix attempts
@@ -302,7 +306,7 @@ const config = {
   
   // Limits and behavior
   maxTestsPerPR: 50,
-  maxFixAttempts: 5,
+  maxFixAttempts: 5, // or -1 for infinite attempts
   requestDelay: 1000,  // Delay in ms between requests to avoid rate limits (default: 0)
   maxRetries: 3,       // Max retries for rate limits (default: 3)
   
@@ -331,7 +335,7 @@ module.exports = config;
     "**/node_modules/**",
     "**/dist/**"
   ],
-  "maxFixAttempts": 5,
+  "maxFixAttempts": 5, // or -1 for infinite attempts
   "requestDelay": 1000,
   "maxRetries": 3,
   "enableAutoCommit": true,
@@ -431,23 +435,27 @@ Create a PAT with `repo` scope and add it as a repository secret named `GH_PAT`.
 
 1. **Analyze PR Changes**: Scans the pull request diff to identify changed files
 2. **Extract Functions**: Uses AST analysis to find functions, methods, and classes that were modified
-3. **Generate Tests**: Sends function code to LLM with carefully crafted prompts to generate comprehensive tests
-4. **Validate Tests**: Validates generated tests for syntax completeness, type errors, and private property access before writing
-5. **Run Tests**: Executes the generated tests using your configured test framework
-6. **Fix Failures**: Automatically attempts to fix failing tests (up to `maxFixAttempts` times, default: 5). Context is automatically optimized to fit within model limits.
-7. **Commit Results**: Commits generated tests back to the PR (if `enableAutoCommit` is true)
-8. **Post Summary**: Posts a summary comment to the PR with test generation results
+3. **Read Existing Tests**: Checks for existing test files and reads their content to understand what's already tested
+4. **Generate Tests**: Sends function code to LLM with carefully crafted prompts to generate comprehensive tests. Skips functions/classes that already have tests.
+5. **Merge Intelligently**: Merges new tests with existing ones - consolidates imports, merges describe blocks for the same class/function, avoids duplicates
+6. **Validate Tests**: Validates generated tests for syntax completeness, type errors, and private property access before writing
+7. **Run Tests**: Executes the generated tests using your configured test framework
+8. **Fix Failures**: Automatically attempts to fix failing tests (up to `maxFixAttempts` times, default: 5, or infinite if set to `-1`). Context is automatically optimized to fit within model limits.
+9. **Commit Results**: Commits generated tests back to the PR (if `enableAutoCommit` is true)
+10. **Post Summary**: Posts a summary comment to the PR with test generation results
 
 ### Local Development Workflow (Full Mode)
 
 1. **Analyze Working Directory Changes**: Compares working directory to HEAD to identify changed files (staged and unstaged)
 2. **Extract Functions**: Uses AST analysis to find functions, methods, and classes that were modified
-3. **Generate Tests**: Sends function code to LLM to generate comprehensive tests
-4. **Validate Tests**: Validates generated tests for syntax completeness, type errors, and private property access before writing. Invalid files are skipped and reported.
-5. **Run Tests**: Executes the generated tests using your configured test framework
-6. **Fix Failures**: Automatically attempts to fix failing tests (up to `maxFixAttempts` times, default: 5). Context is automatically optimized to fit within model limits. Fixed tests are re-validated before writing.
-7. **Collect Coverage**: If `enableCoverage: true`, collects and reports test coverage after tests run
-8. **Report Results**: Displays summary of generated tests, test results, and coverage (if enabled)
+3. **Read Existing Tests**: Checks for existing test files and reads their content to understand what's already tested
+4. **Generate Tests**: Sends function code to LLM to generate comprehensive tests. Skips functions/classes that already have tests.
+5. **Merge Intelligently**: Merges new tests with existing ones - consolidates imports, merges describe blocks for the same class/function, avoids duplicates
+6. **Validate Tests**: Validates generated tests for syntax completeness, type errors, and private property access before writing. Invalid files are skipped and reported.
+7. **Run Tests**: Executes the generated tests using your configured test framework
+8. **Fix Failures**: Automatically attempts to fix failing tests (up to `maxFixAttempts` times, default: 5, or infinite if set to `-1`). Context is automatically optimized to fit within model limits. Fixed tests are re-validated before writing.
+9. **Collect Coverage**: If `enableCoverage: true`, collects and reports test coverage after tests run
+10. **Report Results**: Displays summary of generated tests, test results, and coverage (if enabled)
 
 ### Core Components
 
@@ -570,7 +578,18 @@ A: Yes, use local modes (`scaffold` or `full`) which analyze all changed files i
 A: It analyzes PR diffs (or local working directory changes) to find modified functions, methods, and classes. It uses AST analysis to extract code structure. In local modes, it compares your working directory to HEAD and processes all changed files (staged and unstaged).
 
 **Q: What if generated tests fail?**
-A: Kakarot CI automatically attempts to fix failing tests up to `maxFixAttempts` times (default: 5). If tests still fail after all attempts, they're posted as suggestions instead of being committed.
+A: Kakarot CI automatically attempts to fix failing tests up to `maxFixAttempts` times (default: 5). Set `maxFixAttempts: -1` for infinite attempts. If tests still fail after all attempts (or if you stop the process), they're posted as suggestions instead of being committed.
+
+**Q: What happens if a test file already exists?**
+A: Kakarot CI intelligently merges new tests with existing ones:
+- **Reads existing test files** before generating
+- **Skips functions/classes** that already have tests
+- **Consolidates imports** - removes duplicate imports from the same source
+- **Merges describe blocks** - adds new tests to existing describe blocks for the same class/function
+- **Avoids duplicates** - won't generate tests for functions that already have tests
+- **Preserves structure** - maintains existing test organization
+
+This means you can run Kakarot multiple times on the same file, and it will only add tests for new functions, not duplicate existing ones.
 
 **Q: Can I review tests before they're committed?**
 A: Yes, set `enableAutoCommit: false` in your config. Tests will be generated but not committed automatically.
@@ -578,7 +597,7 @@ A: Yes, set `enableAutoCommit: false` in your config. Tests will be generated bu
 **Q: How does scaffold mode differ from full mode?**
 A: 
 - **Scaffold**: Generates test structure only (describe/it blocks with TODO comments). Tests are not run or validated.
-- **Full**: Generates complete tests with assertions, runs them, attempts to fix failures (up to `maxFixAttempts` times), and optionally collects coverage
+- **Full**: Generates complete tests with assertions, runs them, attempts to fix failures (up to `maxFixAttempts` times, or infinite if `-1`), and optionally collects coverage
 - **PR mode**: Full tests + GitHub integration (commits, PR comments)
 
 **Q: Does scaffold mode validate generated tests?**

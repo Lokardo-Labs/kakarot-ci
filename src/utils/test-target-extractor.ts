@@ -69,13 +69,15 @@ export async function extractTestTargets(
       }));
       
       // Analyze AST and extract test targets (use head ref for test file detection)
+      // For PR mode, only test functions that overlap with changes (more targeted)
       const fileTargets = await analyzeFile(
         diff.filename,
         fileContents.content,
         ranges,
         prHeadRef,
         githubClient,
-        config.testDirectory
+        config.testDirectory,
+        false // testAllExports = false for PR mode (only test changed functions)
       );
       
       targets.push(...fileTargets);
