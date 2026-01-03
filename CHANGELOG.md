@@ -1,3 +1,10 @@
+## [0.10.3](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.2...v0.10.3) (2026-01-03)
+
+
+### Bug Fixes
+
+* Adding in general bug fixes for test quality ([#38](https://github.com/Lokardo-Labs/kakarot-ci/issues/38)) ([068d526](https://github.com/Lokardo-Labs/kakarot-ci/commit/068d526f7b9febf1321a3ee4e299510bf36483d4))
+
 ## [0.10.2](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.1...v0.10.2) (2026-01-03)
 
 
