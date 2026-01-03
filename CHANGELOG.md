@@ -1,3 +1,10 @@
+# [0.10.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.9.1...v0.10.0) (2026-01-03)
+
+
+### Features
+
+* Validator and unused imports ([#35](https://github.com/Lokardo-Labs/kakarot-ci/issues/35)) ([4ef4820](https://github.com/Lokardo-Labs/kakarot-ci/commit/4ef4820a43bd15e3eb2446cc5ae210582babb03c))
+
 ## [0.9.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.9.0...v0.9.1) (2026-01-03)
 
 
