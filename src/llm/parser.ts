@@ -77,6 +77,16 @@ export function validateTestCodeStructure(code: string, framework: 'jest' | 'vit
     errors.push('Missing test structure (describe/it/test)');
   }
 
+  // Check for Playwright-style syntax (incorrect for Jest/Vitest)
+  if (code.includes('test.describe') || code.match(/test\s*\.\s*describe/)) {
+    errors.push('Invalid syntax: test.describe() is Playwright syntax, not ' + framework + '. Use describe() instead.');
+  }
+  
+  // Check for incorrect test() usage pattern (test.xxx is Playwright, not Vitest/Jest)
+  if (code.match(/test\s*\.\s*\w+\s*\(/)) {
+    errors.push('Invalid syntax: test.xxx() is Playwright syntax, not ' + framework + '. Use describe() and it() instead.');
+  }
+
   // Check for framework-specific imports
   if (framework === 'jest') {
     if (!code.includes("from 'jest'") && !code.includes('from "jest"') && !code.includes('require(')) {
@@ -86,8 +96,23 @@ export function validateTestCodeStructure(code: string, framework: 'jest' | 'vit
       }
     }
   } else if (framework === 'vitest') {
+    // Vitest requires explicit import
     if (!code.includes("from 'vitest'") && !code.includes('from "vitest"')) {
-      errors.push('Missing Vitest import');
+      errors.push('Missing Vitest import: use "import { describe, it } from \'vitest\';"');
+    }
+    
+    // Check for correct Vitest import pattern
+    const hasCorrectImport = code.includes("import {") && code.includes("} from 'vitest'");
+    const hasDescribeIt = code.includes('describe') || code.includes('it');
+    
+    // If using describe/it, must have proper import
+    if (hasDescribeIt && !hasCorrectImport && !code.includes("from 'vitest'")) {
+      errors.push('Vitest requires explicit import: "import { describe, it } from \'vitest\';"');
+    }
+    
+    // Check for incorrect standalone test import (should be describe/it)
+    if (code.match(/import\s*{\s*test\s*}\s*from\s*['"]vitest['"]/) && !code.includes('describe') && !code.includes('it')) {
+      errors.push('Vitest scaffold should use describe() and it(), not standalone test(). Import: "import { describe, it } from \'vitest\';"');
     }
   }
 
@@ -96,8 +121,8 @@ export function validateTestCodeStructure(code: string, framework: 'jest' | 'vit
     errors.push('Test code appears too short or empty');
   }
 
-  // Check for common test patterns
-  if (!code.match(/(describe|it|test)\s*\(/)) {
+  // Check for common test patterns (but not Playwright-style)
+  if (!code.match(/(describe|it|test)\s*\(/) && !code.match(/test\s*\.\s*describe/)) {
     errors.push('Missing test function calls (describe/it/test)');
   }
 

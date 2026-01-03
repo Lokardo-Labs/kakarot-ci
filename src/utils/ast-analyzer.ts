@@ -8,12 +8,86 @@ interface FunctionNode {
   start: number;
   end: number;
   node: ts.Node;
+  className?: string; // If this is a class method, which class does it belong to?
+  isPrivate?: boolean; // Is this method/property private?
+}
+
+interface ClassInfo {
+  name: string;
+  start: number;
+  end: number;
+  privateProperties: string[];
+  privateMethods: string[];
+  exported: boolean;
+}
+
+/**
+ * Extract class information from TypeScript source code
+ */
+function extractClasses(sourceFile: ts.SourceFile): ClassInfo[] {
+  const classes: ClassInfo[] = [];
+  
+  function visit(node: ts.Node) {
+    if (ts.isClassDeclaration(node) && node.name) {
+      const className = node.name.text;
+      const isExported = node.modifiers?.some(m => 
+        m.kind === ts.SyntaxKind.ExportKeyword
+      ) ?? false;
+      
+      const privateProperties: string[] = [];
+      const privateMethods: string[] = [];
+      
+      // Extract private members
+      for (const member of node.members) {
+        if (ts.isPropertyDeclaration(member) && member.name && ts.isIdentifier(member.name)) {
+          const isPrivate = member.modifiers?.some(m => 
+            m.kind === ts.SyntaxKind.PrivateKeyword
+          ) ?? false;
+          if (isPrivate) {
+            privateProperties.push(member.name.text);
+          }
+        }
+        if (ts.isMethodDeclaration(member) && member.name && ts.isIdentifier(member.name)) {
+          const isPrivate = member.modifiers?.some(m => 
+            m.kind === ts.SyntaxKind.PrivateKeyword
+          ) ?? false;
+          if (isPrivate) {
+            privateMethods.push(member.name.text);
+          }
+        }
+      }
+      
+      classes.push({
+        name: className,
+        start: node.getStart(sourceFile),
+        end: node.getEnd(),
+        privateProperties,
+        privateMethods,
+        exported: isExported,
+      });
+    }
+    
+    ts.forEachChild(node, visit);
+  }
+  
+  visit(sourceFile);
+  return classes;
+}
+
+/**
+ * Find which class a method belongs to
+ */
+function findClassForMethod(
+  methodStart: number,
+  classes: ClassInfo[]
+): ClassInfo | undefined {
+  return classes.find(c => methodStart >= c.start && methodStart <= c.end);
 }
 
 /**
  * Extract functions/methods from TypeScript source code
  */
-function extractFunctions(sourceFile: ts.SourceFile): FunctionNode[] {
+function extractFunctions(sourceFile: ts.SourceFile, classes: ClassInfo[]): FunctionNode[] {
   const functions: FunctionNode[] = [];
   
   function visit(node: ts.Node) {
@@ -60,12 +134,20 @@ function extractFunctions(sourceFile: ts.SourceFile): FunctionNode[] {
     
     // Method declarations (class methods)
     if (ts.isMethodDeclaration(node) && node.name && ts.isIdentifier(node.name)) {
+      const methodStart = node.getStart(sourceFile);
+      const classInfo = findClassForMethod(methodStart, classes);
+      const isPrivate = node.modifiers?.some(m => 
+        m.kind === ts.SyntaxKind.PrivateKeyword
+      ) ?? false;
+      
       functions.push({
         name: node.name.text,
         type: 'class-method',
-        start: node.getStart(sourceFile),
+        start: methodStart,
         end: node.getEnd(),
         node,
+        className: classInfo?.name,
+        isPrivate,
       });
     }
     
@@ -279,7 +361,8 @@ export async function analyzeFile(
     true
   );
   
-  const functions = extractFunctions(sourceFile);
+  const classes = extractClasses(sourceFile);
+  const functions = extractFunctions(sourceFile, classes);
   
   // Check for existing test file once per file (not per function)
   const existingTestFile = await detectTestFile(filePath, ref, githubClient, testDirectory);
@@ -290,6 +373,8 @@ export async function analyzeFile(
     if (functionOverlapsChanges(func, changedRanges, content)) {
       const startLine = getLineNumber(content, func.start);
       const endLine = getLineNumber(content, func.end);
+      
+      const classInfo = func.className ? classes.find(c => c.name === func.className) : undefined;
       
       targets.push({
         filePath,
@@ -303,6 +388,9 @@ export async function analyzeFile(
         changedRanges: changedRanges.filter(
           r => r.start >= startLine && r.end <= endLine
         ),
+        className: func.className,
+        isPrivate: func.isPrivate,
+        classPrivateProperties: classInfo?.privateProperties,
       });
       
       debug(`Found test target: ${func.name} (${func.type}) in ${filePath}${existingTestFile ? ` - existing test: ${existingTestFile}` : ''}`);

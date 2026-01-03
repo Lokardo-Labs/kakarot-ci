@@ -6,6 +6,7 @@ import type { KakarotConfig } from '../types/config.js';
 import type { TestTarget } from '../types/diff.js';
 import { TestGenerator } from '../llm/test-generator.js';
 import { getTestFilePath } from '../utils/test-file-path.js';
+import { calculateImportPath } from '../utils/import-path-calculator.js';
 import { detectPackageManager } from '../utils/package-manager-detector.js';
 import { createTestRunner } from '../utils/test-runner/factory.js';
 import { writeTestFiles } from '../utils/test-file-writer.js';
@@ -110,9 +111,12 @@ export async function generateTestsFromTargets(
         }
       }
 
+      // Calculate correct import path from test file to source file
+      const importPath = calculateImportPath(testFilePath, target.filePath);
+      
       let result;
       if (mode === 'scaffold') {
-        result = await testGenerator.generateTestScaffold(target, existingContent, framework);
+        result = await testGenerator.generateTestScaffold(target, existingContent, framework, testFilePath, importPath);
       } else {
         result = await testGenerator.generateTest({
           target: {
@@ -121,9 +125,14 @@ export async function generateTestsFromTargets(
             functionType: target.functionType,
             code: target.code,
             context: target.context,
+            className: target.className,
+            isPrivate: target.isPrivate,
+            classPrivateProperties: target.classPrivateProperties,
           },
           framework,
           existingTestFile: existingContent,
+          testFilePath,
+          importPath,
         });
       }
 
@@ -168,32 +177,91 @@ export async function generateTestsFromTargets(
     }
   }
 
-  // Write tests to disk and run them (only in full mode)
+  // Write tests to disk and run them (only in full/pr mode, not scaffold)
   const packageManager = detectPackageManager(projectRoot);
   info(`Detected package manager: ${packageManager}`);
 
   let finalTestFiles = testFiles;
+  let finalTestsFailed = testsFailed;
+  let coverageEnabled = false;
+  let testResults: TestResult[] | undefined = undefined;
 
   if (testFiles.size > 0) {
     // Write test files to disk
     const writtenPaths = writeTestFiles(testFiles, projectRoot);
     info(`Wrote ${writtenPaths.length} test file(s) to disk`);
 
-    // Only run tests in full mode
-    if (mode === 'full') {
+    // Run tests and fix failures if not in scaffold mode
+    if (mode !== 'scaffold') {
       const testRunner = createTestRunner(framework);
-      finalTestFiles = await runTestsAndFix(
-        testRunner,
-        testFiles,
-        writtenPaths,
-        framework,
-        packageManager,
-        projectRoot,
-        testGenerator,
-        config.maxFixAttempts,
-        config,
-        testFileToTargetsMap
-      );
+      
+      try {
+        info('Running tests and fixing failures...');
+        const fixedTestFiles = await runTestsAndFix(
+          testRunner,
+          testFiles,
+          writtenPaths,
+          framework,
+          packageManager,
+          projectRoot,
+          testGenerator,
+          config.maxFixAttempts,
+          config,
+          testFileToTargetsMap
+        );
+        
+        // Update final test files with fixed versions
+        finalTestFiles = fixedTestFiles;
+        
+        // Run final tests (with coverage if enabled in full mode)
+        coverageEnabled = mode === 'full' && config.enableCoverage;
+        testResults = await testRunner.runTests({
+          testFiles: writtenPaths,
+          framework,
+          packageManager,
+          projectRoot,
+          coverage: coverageEnabled,
+        });
+        
+        // Count actual failures after fix attempts
+        finalTestsFailed = testResults.reduce((sum, r) => sum + (r.success ? 0 : r.failed), 0);
+        
+        if (finalTestsFailed > 0) {
+          warn(`Some tests still failing after fix attempts: ${finalTestsFailed} test(s)`);
+        } else {
+          info(`All tests passed after fix attempts`);
+        }
+      } catch (err) {
+        warn(`Failed to run tests or apply fixes: ${err instanceof Error ? err.message : String(err)}`);
+        // Don't fail the whole operation, just report the error
+      }
+    }
+  }
+
+  // Read coverage report if coverage was enabled
+  let coverageReport = null;
+  let coverageDelta = null;
+  if (coverageEnabled) {
+    try {
+      // Get baseline coverage before running new tests (if coverage report exists)
+      const baselineCoverage = readCoverageReport(projectRoot, framework);
+      
+      // Read coverage report after running tests
+      coverageReport = readCoverageReport(projectRoot, framework);
+      if (coverageReport) {
+        info(`Coverage collected: ${coverageReport.total.lines.percentage.toFixed(1)}% lines`);
+        
+        // Calculate coverage delta if baseline exists
+        if (baselineCoverage) {
+          coverageDelta = calculateCoverageDelta(baselineCoverage, coverageReport);
+          info(`Coverage delta: +${coverageDelta.lines.toFixed(1)}% lines, +${coverageDelta.functions.toFixed(1)}% functions`);
+        }
+      } else {
+        warn('Could not read coverage report. Check that coverage package is installed and coverage/coverage-final.json exists.');
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      warn(`Failed to read coverage report: ${errorMessage}`);
     }
   }
 
@@ -201,60 +269,19 @@ export async function generateTestsFromTargets(
   const result: TestGenerationResult = {
     targetsProcessed: limitedTargets.length,
     testsGenerated,
-    testsFailed,
+    testsFailed: finalTestsFailed,
     testFiles: Array.from(finalTestFiles.entries()).map(([path, data]) => ({
       path,
       targets: data.targets,
     })),
     errors,
     finalTestFiles,
+    coverageReport: coverageReport || undefined,
+    coverageDelta: coverageDelta || undefined,
+    testResults: testResults,
   };
 
-  // Run tests with coverage for final report (only if enabled in config and tests were generated, and in full mode)
-  if (mode === 'full' && config.enableCoverage && finalTestFiles.size > 0) {
-    const testRunner = createTestRunner(framework);
-    const writtenPaths = Array.from(finalTestFiles.keys());
-    
-    try {
-      // Get baseline coverage before running new tests (if coverage report exists)
-      const baselineCoverage = readCoverageReport(projectRoot, framework);
-      
-      info('Running tests with coverage...');
-      const finalTestResults = await testRunner.runTests({
-        testFiles: writtenPaths,
-        framework,
-        packageManager,
-        projectRoot,
-        coverage: true,
-      });
-
-      // Read coverage report after running tests
-      const coverageReport = readCoverageReport(projectRoot, framework);
-      if (coverageReport) {
-        info(`Coverage collected: ${coverageReport.total.lines.percentage.toFixed(1)}% lines`);
-        result.coverageReport = coverageReport;
-        result.testResults = finalTestResults;
-        
-        // Calculate coverage delta if baseline exists
-        if (baselineCoverage) {
-          const delta = calculateCoverageDelta(baselineCoverage, coverageReport);
-          result.coverageDelta = delta;
-          info(`Coverage delta: +${delta.lines.toFixed(1)}% lines, +${delta.functions.toFixed(1)}% functions`);
-        }
-      } else {
-        warn('Could not read coverage report (coverage package may be missing)');
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      if (errorMessage.includes('coverage') || errorMessage.includes('MISSING DEPENDENCY')) {
-        warn(`Coverage collection failed (coverage package may be missing): ${errorMessage.split('\n')[0]}`);
-      } else {
-        throw err;
-      }
-    }
-  }
-
-  success(`Completed: ${testsGenerated} test(s) generated, ${testsFailed} failed`);
+  success(`Completed: ${testsGenerated} test(s) generated, ${finalTestsFailed} failed`);
 
   return result;
 }

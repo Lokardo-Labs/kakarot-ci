@@ -5,6 +5,7 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { simpleGit } from 'simple-git';
+import { minimatch } from 'minimatch';
 import type { KakarotConfig } from '../types/config.js';
 import type { ChangedRange } from '../types/diff.js';
 import { getChangedRanges } from './diff-parser.js';
@@ -24,16 +25,13 @@ export async function extractLocalTestTargets(
   const projectRoot = await findProjectRoot();
   const git = simpleGit(projectRoot);
   
-  // Get changed files using simple-git
-  const status = await git.status();
+  // Get all changed files (staged and unstaged) by comparing working directory to HEAD
+  // This is more flexible than requiring files to be staged
+  const diffSummary = await git.diffSummary(['HEAD']);
   const changedFiles = [
-    ...status.modified,
-    ...status.created,
-    ...status.renamed.map(r => r.to),
+    ...diffSummary.files.map(f => f.file),
   ].filter(file => {
     // Filter by include/exclude patterns
-    const { minimatch } = require('minimatch');
-    
     // Check exclude patterns first
     for (const pattern of config.excludePatterns) {
       if (minimatch(file, pattern)) {
@@ -52,11 +50,11 @@ export async function extractLocalTestTargets(
   });
 
   if (changedFiles.length === 0) {
-    info('No changed files found in git status');
+    info('No changed files found (compared to HEAD)');
     return [];
   }
 
-  info(`Found ${changedFiles.length} changed file(s) in local git changes`);
+  info(`Found ${changedFiles.length} changed file(s) in working directory (staged and unstaged)`);
 
   // Get diff for each file and convert to PullRequestFile format
   const prFiles: PullRequestFile[] = [];

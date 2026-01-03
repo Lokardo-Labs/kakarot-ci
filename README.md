@@ -18,8 +18,9 @@ Kakarot CI automatically generates comprehensive unit tests using AI. While opti
 - 🤖 **AI-Powered Test Generation**: Uses LLMs (OpenAI, Anthropic, Google) to generate comprehensive unit tests
 - 🔍 **Smart Code Analysis**: Analyzes AST to extract functions and understand code structure
 - 🎯 **Targeted Testing**: Generates tests for specific functions, files, or entire codebases
-- 🔄 **Auto-Fix Loop**: Automatically fixes failing tests with multiple retry attempts
+- 🔄 **Auto-Fix Loop**: Automatically fixes failing tests with multiple retry attempts (default: 5 attempts)
 - 📊 **Coverage Reports**: Optional test coverage analysis and summaries
+- 🧠 **Smart Context Optimization**: Automatically optimizes context to fit within model token limits
 - 🚀 **GitHub Integration**: Seamlessly integrates with GitHub Actions and PR workflows (optional)
 - ⚙️ **Flexible Configuration**: Supports Jest and Vitest, configurable test locations and patterns
 - 📝 **PR Comments**: Automatically posts test generation summaries to pull requests
@@ -146,9 +147,10 @@ Kakarot CI can be configured via:
   - Temperature for test fixing attempts (0-2)
   - Example: `0.3`
 
-- **`maxFixAttempts`** (number, optional, default: `3`)
-  - Maximum number of attempts to fix failing tests (0-5)
+- **`maxFixAttempts`** (number, optional, default: `5`)
+  - Maximum number of attempts to fix failing tests (0-10)
   - Example: `5`
+  - Note: Kakarot CI automatically optimizes context to fit within model limits during fix attempts
 
 #### Test Framework
 
@@ -398,9 +400,19 @@ Create a PAT with `repo` scope and add it as a repository secret named `GH_PAT`.
 2. **Extract Functions**: Uses AST analysis to find functions, methods, and classes that were modified
 3. **Generate Tests**: Sends function code to LLM with carefully crafted prompts to generate comprehensive tests
 4. **Run Tests**: Executes the generated tests using your configured test framework
-5. **Fix Failures**: Automatically attempts to fix failing tests (up to `maxFixAttempts` times)
+5. **Fix Failures**: Automatically attempts to fix failing tests (up to `maxFixAttempts` times, default: 5). Context is automatically optimized to fit within model limits.
 6. **Commit Results**: Commits generated tests back to the PR (if `enableAutoCommit` is true)
 7. **Post Summary**: Posts a summary comment to the PR with test generation results
+
+### Local Development Workflow (Full Mode)
+
+1. **Analyze Working Directory Changes**: Compares working directory to HEAD to identify changed files (staged and unstaged)
+2. **Extract Functions**: Uses AST analysis to find functions, methods, and classes that were modified
+3. **Generate Tests**: Sends function code to LLM to generate comprehensive tests
+4. **Run Tests**: Executes the generated tests using your configured test framework
+5. **Fix Failures**: Automatically attempts to fix failing tests (up to `maxFixAttempts` times, default: 5). Context is automatically optimized to fit within model limits.
+6. **Collect Coverage**: If `enableCoverage: true`, collects and reports test coverage after tests run
+7. **Report Results**: Displays summary of generated tests, test results, and coverage (if enabled)
 
 ### Core Components
 
@@ -504,7 +516,7 @@ Options:
 **Problem**: Generated tests don't pass.
 
 **Solutions**:
-- Increase `maxFixAttempts` in config (default: 3)
+- Increase `maxFixAttempts` in config (default: 5)
 - Check test output for specific errors
 - Review generated tests manually
 - Ensure your code is testable (no circular dependencies, proper exports)
@@ -527,6 +539,26 @@ Options:
 - Reduce `maxTestsPerPR` to process fewer tests at once
 - Check your API usage limits
 - Consider using a different model or provider
+
+#### "Context length exceeded" or "maximum context length"
+**Problem**: Fix loop fails due to context being too large for the model.
+
+**Solutions**:
+- Kakarot CI automatically optimizes context, but if it still exceeds limits:
+  - Use a model with larger context window (e.g., `gpt-4-turbo`, `gpt-4o`, `claude-3-opus`)
+  - Reduce the size of files being tested
+  - Split large changes into smaller PRs
+- The error message will suggest appropriate models
+
+#### "Could not read coverage report"
+**Problem**: Coverage report not found after running tests.
+
+**Solutions**:
+- Ensure coverage package is installed (`@vitest/coverage-v8` or `@jest/coverage`)
+- Verify coverage is enabled in your test framework config
+- Check that `coverage/coverage-final.json` exists after running tests
+- In full mode, ensure `enableCoverage: true` is set in config
+- Coverage runs automatically in full mode when enabled, even if some tests fail
 
 #### "Expected file but got directory"
 **Problem**: Path points to a directory instead of a file.
@@ -589,6 +621,8 @@ npx kakarot-ci --mode scaffold
 npx kakarot-ci --mode full
 ```
 
+**Note**: Local modes analyze all files changed in your working directory (both staged and unstaged), compared to the last commit (HEAD). You don't need to stage files first.
+
 **Q: Does this work with JavaScript or only TypeScript?**
 A: Both! Kakarot CI supports `.ts`, `.tsx`, `.js`, and `.jsx` files.
 
@@ -619,27 +653,30 @@ A: Use `excludePatterns` in your config:
 ```
 
 **Q: Can I generate tests for specific files only?**
-A: Yes, use local modes (`scaffold` or `full`) which analyze git changes, or configure `includePatterns` to limit scope.
+A: Yes, use local modes (`scaffold` or `full`) which analyze all changed files in your working directory (staged and unstaged), or configure `includePatterns` to limit scope.
 
 ### Test Generation
 
 **Q: How does the tool decide what to test?**
-A: It analyzes PR diffs (or local git changes) to find modified functions, methods, and classes. It uses AST analysis to extract code structure.
+A: It analyzes PR diffs (or local working directory changes) to find modified functions, methods, and classes. It uses AST analysis to extract code structure. In local modes, it compares your working directory to HEAD and processes all changed files (staged and unstaged).
 
 **Q: What if generated tests fail?**
-A: Kakarot CI automatically attempts to fix failing tests up to `maxFixAttempts` times (default: 3). If tests still fail after all attempts, they're posted as suggestions instead of being committed.
+A: Kakarot CI automatically attempts to fix failing tests up to `maxFixAttempts` times (default: 5). If tests still fail after all attempts, they're posted as suggestions instead of being committed.
 
 **Q: Can I review tests before they're committed?**
 A: Yes, set `enableAutoCommit: false` in your config. Tests will be generated but not committed automatically.
 
 **Q: How does scaffold mode differ from full mode?**
 A: 
-- **Scaffold**: Generates test structure only (describe/it blocks with TODO comments)
-- **Full**: Generates complete tests with assertions
+- **Scaffold**: Generates test structure only (describe/it blocks with TODO comments). Tests are not run or validated.
+- **Full**: Generates complete tests with assertions, runs them, attempts to fix failures (up to `maxFixAttempts` times), and optionally collects coverage
 - **PR mode**: Full tests + GitHub integration (commits, PR comments)
 
+**Q: Does scaffold mode validate generated tests?**
+A: Yes! Scaffold mode validates that generated tests use the correct framework syntax (Jest/Vitest). It will fail if incorrect syntax is detected (e.g., Playwright-style `test.describe()` instead of `describe()`).
+
 **Q: Does it generate tests for existing code?**
-A: By default, it only generates tests for changed code in PRs. In local modes, it analyzes git changes. You can configure `includePatterns` to target specific files.
+A: By default, it only generates tests for changed code in PRs. In local modes, it analyzes all files changed in your working directory (compared to HEAD), including both staged and unstaged changes. You can configure `includePatterns` to target specific files.
 
 ### GitHub Integration
 

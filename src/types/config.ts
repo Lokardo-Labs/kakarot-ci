@@ -10,7 +10,7 @@ export const KakarotConfigSchema = z.object({
   maxTokens: z.number().int().min(1).max(100000).optional(),
   temperature: z.number().min(0).max(2).optional(),
   fixTemperature: z.number().min(0).max(2).optional(),
-  maxFixAttempts: z.number().int().min(0).max(5).default(3),
+  maxFixAttempts: z.number().int().min(0).max(10).default(5),
   framework: z.enum(['jest', 'vitest']),
   mode: z.enum(['scaffold', 'full', 'pr']).default('pr'),
   testLocation: z.enum(['separate', 'co-located']).default('separate'),

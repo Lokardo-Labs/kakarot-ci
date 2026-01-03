@@ -1,8 +1,8 @@
-name: Continuous Delivery
+name: Semantic Release
 
 on:
   workflow_run:
-    workflows: ["Continuous Integration"]
+    workflows: ["Test"]
     types:
       - completed
     branches:

@@ -34,5 +34,8 @@ export interface TestTarget {
   context: string;
   existingTestFile?: string;
   changedRanges: ChangedRange[];
+  className?: string; // If this is a class method, which class does it belong to?
+  isPrivate?: boolean; // Is this method/property private?
+  classPrivateProperties?: string[]; // Private properties in the class (for context)
 }
 
