@@ -5,6 +5,7 @@
 
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { removeUnusedImports } from './import-cleaner.js';
 
 export interface CodeStyleConfig {
   eslint?: {
@@ -126,6 +127,14 @@ export async function formatGeneratedCode(
 ): Promise<string> {
   const codeStyle = await detectCodeStyle(projectRoot);
   let formatted = code;
+
+  // Remove unused imports first
+  try {
+    formatted = removeUnusedImports(formatted);
+  } catch (err) {
+    // If import removal fails, continue without it
+    console.warn(`Import cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   // Prettier takes precedence if available
   if (codeStyle.prettier?.enabled) {

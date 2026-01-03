@@ -21,6 +21,7 @@ Kakarot CI automatically generates comprehensive unit tests using AI. While opti
 - 🔄 **Auto-Fix Loop**: Automatically fixes failing tests with multiple retry attempts (default: 5 attempts)
 - ✅ **File Validation**: Validates generated tests for syntax errors, type errors, and private property access before writing
 - 🛡️ **Private Property Protection**: Prevents tests from accessing private class properties
+- 🧹 **Import Cleanup**: Automatically removes unused imports from generated test files
 - 📊 **Coverage Reports**: Optional test coverage analysis and summaries
 - 🧠 **Smart Context Optimization**: Automatically optimizes context to fit within model token limits
 - 🚀 **GitHub Integration**: Seamlessly integrates with GitHub Actions and PR workflows (optional)
@@ -649,6 +650,9 @@ A: ESLint, Prettier, Biome, and TypeScript config. The tool auto-detects which o
 
 **Q: Can I disable code formatting?**
 A: Yes, set `formatGeneratedCode: false` and `lintGeneratedCode: false` in config.
+
+**Q: Are unused imports automatically removed?**
+A: Yes, unused imports are automatically removed from generated test files before formatting. This happens as part of the code formatting step.
 
 ### File Validation
 
