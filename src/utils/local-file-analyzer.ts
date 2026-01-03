@@ -147,13 +147,16 @@ export async function extractLocalTestTargets(
         },
       };
 
+      // For local mode, test all exported functions/classes in changed files
+      // This ensures comprehensive coverage when working on a file
       const fileTargets = await analyzeFile(
         filePath,
         fileContent,
         ranges,
         'HEAD',
         localFileChecker,
-        config.testDirectory
+        config.testDirectory,
+        true // testAllExports = true for local mode
       );
 
       targets.push(...fileTargets);

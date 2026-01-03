@@ -152,39 +152,47 @@ function extractFunctions(sourceFile: ts.SourceFile, classes: ClassInfo[]): Func
     }
     
     // Variable statements: const foo = function() {} or const foo = function bar() {}
+    // Only include if exported (export const foo = ...) or if it's a class method
     if (ts.isVariableStatement(node)) {
-      for (const declaration of node.declarationList.declarations) {
-        if (declaration.initializer) {
-          // Arrow functions
-          if (ts.isArrowFunction(declaration.initializer)) {
-            if (ts.isIdentifier(declaration.name)) {
-              functions.push({
-                name: declaration.name.text,
-                type: 'arrow-function',
-                start: declaration.getStart(sourceFile),
-                end: declaration.getEnd(),
-                node: declaration,
-              });
+      const isExported = node.modifiers?.some(m => 
+        m.kind === ts.SyntaxKind.ExportKeyword
+      );
+      
+      // Only extract exported variable functions, or if we're in a class context
+      if (isExported) {
+        for (const declaration of node.declarationList.declarations) {
+          if (declaration.initializer) {
+            // Arrow functions
+            if (ts.isArrowFunction(declaration.initializer)) {
+              if (ts.isIdentifier(declaration.name)) {
+                functions.push({
+                  name: declaration.name.text,
+                  type: 'arrow-function',
+                  start: declaration.getStart(sourceFile),
+                  end: declaration.getEnd(),
+                  node: declaration,
+                });
+              }
             }
-          }
-          // Named function expressions: const foo = function bar() {}
-          else if (ts.isFunctionExpression(declaration.initializer)) {
-            const funcExpr = declaration.initializer;
-            // Use the function name if it has one, otherwise use the variable name
-            const name = funcExpr.name
-              ? funcExpr.name.text
-              : ts.isIdentifier(declaration.name)
-              ? declaration.name.text
-              : 'anonymous';
-            
-            if (name !== 'anonymous') {
-              functions.push({
-                name,
-                type: 'function',
-                start: declaration.getStart(sourceFile),
-                end: declaration.getEnd(),
-                node: declaration,
-              });
+            // Named function expressions: const foo = function bar() {}
+            else if (ts.isFunctionExpression(declaration.initializer)) {
+              const funcExpr = declaration.initializer;
+              // Use the function name if it has one, otherwise use the variable name
+              const name = funcExpr.name
+                ? funcExpr.name.text
+                : ts.isIdentifier(declaration.name)
+                ? declaration.name.text
+                : 'anonymous';
+              
+              if (name !== 'anonymous') {
+                functions.push({
+                  name,
+                  type: 'function',
+                  start: declaration.getStart(sourceFile),
+                  end: declaration.getEnd(),
+                  node: declaration,
+                });
+              }
             }
           }
         }
@@ -345,6 +353,9 @@ async function detectTestFile(
 
 /**
  * Analyze TypeScript file and extract test targets
+ * 
+ * @param testAllExports - If true, test all exported functions/classes regardless of change overlap.
+ *                         If false, only test functions that overlap with changed ranges.
  */
 export async function analyzeFile(
   filePath: string,
@@ -352,8 +363,11 @@ export async function analyzeFile(
   changedRanges: ChangedRange[],
   ref: string,
   githubClient: { fileExists: (ref: string, path: string) => Promise<boolean> },
-  testDirectory: string
+  testDirectory: string,
+  testAllExports?: boolean
 ): Promise<TestTarget[]> {
+  // Default to false (only test changed functions) for backward compatibility
+  const shouldTestAllExports = testAllExports ?? false;
   const sourceFile = ts.createSourceFile(
     filePath,
     content,
@@ -369,8 +383,23 @@ export async function analyzeFile(
   
   const targets: TestTarget[] = [];
   
+  // If testAllExports is true, or if file is new (entire file is changed), test all exported functions
+  const lineCount = content.split('\n').length;
+  const isNewFile = changedRanges.length === 1 && 
+    changedRanges[0].type === 'addition' && 
+    changedRanges[0].start === 1 && 
+    changedRanges[0].end >= lineCount * 0.9; // 90%+ of file is "changed"
+  
+  // Also test all if a large portion of the file changed (indicates major refactor)
+  const largeChange = changedRanges.some(r => 
+    r.type === 'addition' && (r.end - r.start) >= lineCount * 0.5
+  );
+  
+  const shouldTestAll = shouldTestAllExports || isNewFile || largeChange;
+  
   for (const func of functions) {
-    if (functionOverlapsChanges(func, changedRanges, content)) {
+    // Test if: overlaps with changes OR we're testing all exports
+    if (shouldTestAll || functionOverlapsChanges(func, changedRanges, content)) {
       const startLine = getLineNumber(content, func.start);
       const endLine = getLineNumber(content, func.end);
       

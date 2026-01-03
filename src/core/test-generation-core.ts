@@ -79,7 +79,13 @@ export async function generateTestsFromTargets(
     warn(`Limited to ${limitedTargets.length} target(s) (maxTestsPerPR: ${config.maxTestsPerPR})`);
   }
 
-  info(`Processing ${limitedTargets.length} test target(s)`);
+  info(`Processing ${limitedTargets.length} test target(s)${targets.length > limitedTargets.length ? ` (limited from ${targets.length} total)` : ''}`);
+  
+  // Log which functions/classes will be tested
+  if (limitedTargets.length > 0) {
+    const targetNames = limitedTargets.map(t => t.className ? `${t.className}.${t.functionName}` : t.functionName).join(', ');
+    info(`Test targets: ${targetNames}`);
+  }
 
   // Initialize test generator
   const testGenerator = new TestGenerator(config);
@@ -106,15 +112,31 @@ export async function generateTestsFromTargets(
     try {
       const testFilePath = getTestFilePath(target, config);
       
-      // Get existing test file content
+      // Get existing test file content (read once per file, not per target)
       let existingContent: string | undefined;
-      if (getExistingTestFile) {
-        existingContent = await getExistingTestFile(testFilePath);
+      const existingFileData = testFiles.get(testFilePath);
+      if (existingFileData) {
+        // We've already processed this file - use accumulated content as existing
+        existingContent = existingFileData.content;
       } else {
-        // Default: check filesystem
-        const fullTestPath = join(projectRoot, testFilePath);
-        if (existsSync(fullTestPath)) {
-          existingContent = readFileSync(fullTestPath, 'utf-8');
+        // First time processing this file - read from disk/GitHub
+        if (getExistingTestFile) {
+          existingContent = await getExistingTestFile(testFilePath);
+        } else {
+          // Default: check filesystem
+          const fullTestPath = join(projectRoot, testFilePath);
+          if (existsSync(fullTestPath)) {
+            existingContent = readFileSync(fullTestPath, 'utf-8');
+          }
+        }
+      }
+      
+      // Check if this function/class already has tests
+      if (existingContent) {
+        const { hasExistingTests } = await import('../utils/test-file-merger.js');
+        if (hasExistingTests(existingContent, target.functionName, target.className)) {
+          info(`Skipping ${target.functionName} - tests already exist in ${testFilePath}`);
+          continue; // Skip this target
         }
       }
 
@@ -159,25 +181,32 @@ export async function generateTestsFromTargets(
         privatePropertiesMap.set(testFilePath, [...new Set([...existing, ...target.classPrivateProperties])]);
       }
       
-      // Store test file
+      // Store test file - merge intelligently with existing content
       let fileData = testFiles.get(testFilePath);
       if (!fileData) {
-        fileData = { content: formattedCode, targets: [] };
+        // First target for this file - use existing content as base if it exists
+        const baseContent = existingContent || '';
+        if (baseContent) {
+          // Merge with existing file
+          const { mergeTestFiles } = await import('../utils/test-file-merger.js');
+          fileData = { content: mergeTestFiles(baseContent, formattedCode), targets: [] };
+        } else {
+          fileData = { content: formattedCode, targets: [] };
+        }
         testFiles.set(testFilePath, fileData);
         testFileToTargetsMap[testFilePath] = [];
       } else {
-        // Append with separator if base content exists
-        const newContent = fileData.content && existingContent
-          ? fileData.content + '\n\n' + formattedCode
-          : formattedCode;
+        // Merge new code with accumulated content
+        const { mergeTestFiles } = await import('../utils/test-file-merger.js');
+        const mergedContent = mergeTestFiles(fileData.content, formattedCode);
         
-        // Validate combined content before storing (basic syntax check)
-        const syntaxCheck = checkSyntaxCompleteness(newContent);
+        // Validate merged content before storing (basic syntax check)
+        const syntaxCheck = checkSyntaxCompleteness(mergedContent);
         if (!syntaxCheck.valid) {
-          throw new Error(`Generated test code has syntax errors: ${syntaxCheck.errors.join('; ')}`);
+          throw new Error(`Merged test code has syntax errors: ${syntaxCheck.errors.join('; ')}`);
         }
         
-        fileData.content = newContent;
+        fileData.content = mergedContent;
       }
       
       fileData.targets.push(target.functionName);
@@ -347,8 +376,10 @@ async function runTestsAndFix(
   let attempt = 0;
   const currentTestFiles = new Map(testFiles);
 
-  while (attempt < maxFixAttempts) {
-    info(`Running tests (attempt ${attempt + 1}/${maxFixAttempts})`);
+  const isInfinite = maxFixAttempts === -1;
+  while (isInfinite || attempt < maxFixAttempts) {
+    const attemptLabel = isInfinite ? `${attempt + 1}` : `${attempt + 1}/${maxFixAttempts}`;
+    info(`Running tests (attempt ${attemptLabel})`);
 
     // Run tests
     const results = await testRunner.runTests({
@@ -494,7 +525,7 @@ async function runTestsAndFix(
     attempt++;
   }
 
-  if (attempt >= maxFixAttempts) {
+  if (!isInfinite && attempt >= maxFixAttempts) {
     warn(`Reached maximum fix attempts (${maxFixAttempts}), some tests may still be failing`);
   }
 

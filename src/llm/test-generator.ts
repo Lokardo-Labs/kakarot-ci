@@ -127,7 +127,9 @@ export class TestGenerator {
   async fixTest(context: TestFixContext): Promise<TestGenerationResult> {
     const { framework, attempt } = context;
 
-    info(`Fixing test (attempt ${attempt}/${this.config.maxFixAttempts})`);
+    const isInfinite = this.config.maxFixAttempts === -1;
+    const attemptLabel = isInfinite ? `${attempt}` : `${attempt}/${this.config.maxFixAttempts}`;
+    info(`Fixing test (attempt ${attemptLabel})`);
 
     try {
       // Optimize context to fit within model limits

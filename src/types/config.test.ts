@@ -109,11 +109,33 @@ describe('KakarotConfigSchema', () => {
     expect(() => KakarotConfigSchema.parse(config)).toThrow();
   });
 
-  it('should reject maxFixAttempts out of range', () => {
+  it('should accept maxFixAttempts of -1 for infinite attempts', () => {
     const config = {
       apiKey: 'test-api-key',
       framework: 'jest' as const,
-      maxFixAttempts: 11, // exceeds max (10)
+      maxFixAttempts: -1, // infinite
+    };
+
+    const result = KakarotConfigSchema.parse(config);
+    expect(result.maxFixAttempts).toBe(-1);
+  });
+
+  it('should accept any positive maxFixAttempts value', () => {
+    const config = {
+      apiKey: 'test-api-key',
+      framework: 'jest' as const,
+      maxFixAttempts: 100, // no longer limited to 10
+    };
+
+    const result = KakarotConfigSchema.parse(config);
+    expect(result.maxFixAttempts).toBe(100);
+  });
+
+  it('should reject maxFixAttempts less than -1', () => {
+    const config = {
+      apiKey: 'test-api-key',
+      framework: 'jest' as const,
+      maxFixAttempts: -2, // invalid
     };
 
     expect(() => KakarotConfigSchema.parse(config)).toThrow();
