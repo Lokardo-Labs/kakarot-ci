@@ -1,6 +1,6 @@
 {
   "name": "@kakarot-ci/core",
-  "version": "0.10.6",
+  "version": "0.11.0",
   "description": "Core package for Kakarot CI - AI-powered unit test generation for pull requests",
   "type": "module",
   "main": "./dist/index.cjs",

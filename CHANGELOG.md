@@ -1,3 +1,10 @@
+# [0.11.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.6...v0.11.0) (2026-01-04)
+
+
+### Features
+
+* Adding significant improvements to the prompts and the core model ([#42](https://github.com/Lokardo-Labs/kakarot-ci/issues/42)) ([80d41e9](https://github.com/Lokardo-Labs/kakarot-ci/commit/80d41e98d32e228a3d6a43132ed8eb68b0882f03))
+
 ## [0.10.6](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.5...v0.10.6) (2026-01-03)
 
 
