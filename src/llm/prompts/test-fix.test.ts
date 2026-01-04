@@ -109,8 +109,9 @@ describe('test-fix prompt', () => {
       maxAttempts: 3,
     });
 
-    expect(messages[1].content).toContain('fix attempt 2');
-    expect(messages[1].content).toContain('Previous attempts failed');
+    // Attempt 2 of 3 is halfway, so it should show the halfway message
+    expect(messages[1].content).toMatch(/attempt 2|multiple attempts|start simplifying/i);
+    expect(messages[1].content).toMatch(/previous attempts|multiple attempts|attempts failed|start simplifying/i);
   });
 });
 

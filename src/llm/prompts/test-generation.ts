@@ -23,6 +23,29 @@ function buildSystemPrompt(framework: 'jest' | 'vitest'): string {
 
   return `You are an expert ${frameworkName} test writer. Your task is to generate comprehensive unit tests for TypeScript/JavaScript functions.
 
+🚨🚨🚨 CRITICAL SYNTAX REQUIREMENT - READ THIS FIRST 🚨🚨🚨
+YOUR CODE MUST BE SYNTAX-COMPLETE. INCOMPLETE CODE WILL BE REJECTED.
+
+BEFORE RETURNING CODE, VERIFY:
+1. ✅ Every opening brace { has a matching closing brace }
+2. ✅ Every opening parenthesis ( has a matching closing parenthesis )
+3. ✅ Every opening bracket [ has a matching closing bracket ]
+4. ✅ Every function call is complete (no truncated calls)
+5. ✅ Every string literal is closed (matching quotes)
+6. ✅ Every template literal is closed (matching backticks)
+7. ✅ Every arrow function => has a complete body
+8. ✅ Every describe() and it() block is complete
+
+VALIDATION CHECKLIST:
+- Count opening braces: { count must equal } count
+- Count opening parentheses: ( count must equal ) count  
+- Count opening brackets: [ count must equal ] count
+- No incomplete expressions (e.g., "expect(value" without closing parenthesis)
+- No truncated function calls (e.g., "it('test" without closing quote and parenthesis)
+
+IF YOUR CODE HAS UNCLOSED BRACES, PARENTHESES, OR BRACKETS, IT WILL BE REJECTED.
+RETURN ONLY COMPLETE, SYNTAX-VALID CODE. INCOMPLETE CODE IS WORSE THAN NO CODE.
+
 FRAMEWORK RESTRICTION: You MUST use ${frameworkName} ONLY. This tool ONLY supports Jest and Vitest. Do NOT use any other test framework syntax.
 
 CRITICAL: Test the ACTUAL behavior of the code, not assumed behavior.
@@ -114,12 +137,36 @@ Requirements:
    - If you see multiple describe('ClassName') blocks, consolidate them into one
 16. Use descriptive test names that explain what is being tested
 17. Follow the existing test file structure if one exists
+18. TypeScript Type Safety (CRITICAL):
+   - All generated code MUST pass TypeScript type checking without errors
+   - Use proper type annotations when needed (e.g., const items: (number | null | undefined)[] = [...])
+   - When working with union types (e.g., number | null | undefined), ensure type guards or type assertions are used correctly
+   - For generic functions like deepMerge, use proper type assertions when merging objects with different shapes:
+     - Example: const source = { b: 2 } as Partial<typeof target & { b: number }>;
+     - Example: const result = deepMerge(target as typeof target & { b?: number }, source);
+   - When calling functions with union type parameters, ensure the function signature matches:
+     - If validator expects (item: number | null | undefined): item is number, ensure transformer handles the same types
+   - NEVER generate code that will fail TypeScript compilation
+   - If you're unsure about types, use type assertions (as Type) or type guards to ensure type safety
+   - Test code must be type-safe: all variables, function parameters, and return types must be correctly typed
+   - When using mock functions, ensure their types match the expected function signatures
+   - For array operations with mixed types, explicitly type the array: const items: (Type1 | Type2)[] = [...]
 
 Output format:
 - Return ONLY the test code, no explanations or markdown code blocks
 - The code should be ready to run in a ${frameworkName} environment
 - Include necessary imports at the top
-- Use proper TypeScript types if the source code uses TypeScript
+- Use proper TypeScript types - ALL code MUST pass TypeScript type checking
+- Ensure type safety: use type annotations, type guards, and type assertions as needed
+
+🚨 FINAL SYNTAX CHECK BEFORE RETURNING:
+1. Verify ALL braces, parentheses, and brackets are closed
+2. Verify NO incomplete function calls or expressions
+3. Verify ALL strings and template literals are closed
+4. Count and match: { = }, ( = ), [ = ]
+5. If ANY syntax is incomplete, DO NOT RETURN - fix it first
+
+INCOMPLETE CODE WILL BE REJECTED. ONLY RETURN SYNTAX-COMPLETE CODE.
 
 ${frameworkName} example structure (ONLY use this syntax):
 ${importStatement}

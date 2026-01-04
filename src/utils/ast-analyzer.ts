@@ -160,38 +160,38 @@ function extractFunctions(sourceFile: ts.SourceFile, classes: ClassInfo[]): Func
       
       // Only extract exported variable functions, or if we're in a class context
       if (isExported) {
-        for (const declaration of node.declarationList.declarations) {
-          if (declaration.initializer) {
-            // Arrow functions
-            if (ts.isArrowFunction(declaration.initializer)) {
-              if (ts.isIdentifier(declaration.name)) {
-                functions.push({
-                  name: declaration.name.text,
-                  type: 'arrow-function',
-                  start: declaration.getStart(sourceFile),
-                  end: declaration.getEnd(),
-                  node: declaration,
-                });
-              }
+      for (const declaration of node.declarationList.declarations) {
+        if (declaration.initializer) {
+          // Arrow functions
+          if (ts.isArrowFunction(declaration.initializer)) {
+            if (ts.isIdentifier(declaration.name)) {
+              functions.push({
+                name: declaration.name.text,
+                type: 'arrow-function',
+                start: declaration.getStart(sourceFile),
+                end: declaration.getEnd(),
+                node: declaration,
+              });
             }
-            // Named function expressions: const foo = function bar() {}
-            else if (ts.isFunctionExpression(declaration.initializer)) {
-              const funcExpr = declaration.initializer;
-              // Use the function name if it has one, otherwise use the variable name
-              const name = funcExpr.name
-                ? funcExpr.name.text
-                : ts.isIdentifier(declaration.name)
-                ? declaration.name.text
-                : 'anonymous';
-              
-              if (name !== 'anonymous') {
-                functions.push({
-                  name,
-                  type: 'function',
-                  start: declaration.getStart(sourceFile),
-                  end: declaration.getEnd(),
-                  node: declaration,
-                });
+          }
+          // Named function expressions: const foo = function bar() {}
+          else if (ts.isFunctionExpression(declaration.initializer)) {
+            const funcExpr = declaration.initializer;
+            // Use the function name if it has one, otherwise use the variable name
+            const name = funcExpr.name
+              ? funcExpr.name.text
+              : ts.isIdentifier(declaration.name)
+              ? declaration.name.text
+              : 'anonymous';
+            
+            if (name !== 'anonymous') {
+              functions.push({
+                name,
+                type: 'function',
+                start: declaration.getStart(sourceFile),
+                end: declaration.getEnd(),
+                node: declaration,
+              });
               }
             }
           }

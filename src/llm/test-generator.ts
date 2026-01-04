@@ -14,25 +14,37 @@ import { info, warn, error, debug } from '../utils/logger.js';
 
 export class TestGenerator {
   private provider: ReturnType<typeof createLLMProvider>;
-  private config: Pick<KakarotConfig, 'maxFixAttempts' | 'temperature' | 'fixTemperature' | 'customPrompts' | 'model'>;
+  private fixProvider: ReturnType<typeof createLLMProvider> | null;
+  private config: Pick<KakarotConfig, 'maxFixAttempts' | 'temperature' | 'fixTemperature' | 'customPrompts' | 'model' | 'fixModel'>;
   private modelContextLimit: number;
+  private fixModelContextLimit: number;
 
   constructor(
     config: Pick<
       KakarotConfig,
-      'apiKey' | 'provider' | 'model' | 'maxTokens' | 'maxFixAttempts' | 'temperature' | 'fixTemperature' | 'customPrompts' | 'maxRetries'
+      'apiKey' | 'provider' | 'model' | 'fixModel' | 'maxTokens' | 'maxFixAttempts' | 'temperature' | 'fixTemperature' | 'customPrompts' | 'maxRetries'
     >
   ) {
     this.provider = createLLMProvider(config);
+    // Use fixModel if provided, otherwise use the same provider
+    if (config.fixModel) {
+      debug(`Using separate fix model: ${config.fixModel} (generation model: ${config.model || 'default'})`);
+      this.fixProvider = createLLMProvider({ ...config, model: config.fixModel });
+    } else {
+      debug(`Using same model for generation and fixing: ${config.model || 'default'}`);
+      this.fixProvider = null;
+    }
     this.config = {
       maxFixAttempts: config.maxFixAttempts,
       temperature: config.temperature,
       fixTemperature: config.fixTemperature,
       customPrompts: config.customPrompts,
       model: config.model,
+      fixModel: config.fixModel,
     };
     // Get model context limit (default to 8K for gpt-4, 128K for newer models)
     this.modelContextLimit = this.getModelContextLimit(config.model);
+    this.fixModelContextLimit = this.getModelContextLimit(config.fixModel || config.model);
   }
 
   /**
@@ -132,9 +144,13 @@ export class TestGenerator {
     info(`Fixing test (attempt ${attemptLabel})`);
 
     try {
+      // Use fix provider if available, otherwise use regular provider
+      const provider = this.fixProvider || this.provider;
+      const contextLimit = this.fixModelContextLimit;
+      
       // Optimize context to fit within model limits
       // Reserve space for system prompt (~500 tokens) and completion (4000 tokens)
-      const availableTokens = this.modelContextLimit - 4000 - 500;
+      const availableTokens = contextLimit - 4000 - 500;
       const optimized = optimizeFixContext(
         {
           originalCode: context.originalCode,
@@ -154,9 +170,10 @@ export class TestGenerator {
       };
       
       const messages = buildTestFixPrompt(optimizedContext);
-      debug(`Sending test fix request to LLM (attempt ${attempt}, model limit: ${this.modelContextLimit} tokens)`);
+      const modelName = this.config.fixModel || this.config.model || 'default';
+      debug(`Sending test fix request to LLM (attempt ${attempt}, model: ${modelName}, limit: ${contextLimit} tokens)`);
 
-      const response = await this.provider.generate(messages, {
+      const response = await provider.generate(messages, {
         temperature: this.config.fixTemperature ?? 0.1, // Very low temperature for fix attempts
         maxTokens: 4000,
       });

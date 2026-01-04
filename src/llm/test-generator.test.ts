@@ -191,5 +191,89 @@ describe('TestGenerator', () => {
       })
     ).rejects.toThrow('API error');
   });
+
+  it('should use fixModel when provided', async () => {
+    const mockFixProvider = {
+      generate: vi.fn().mockResolvedValue({
+        content: 'fixed test code',
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      }),
+    };
+
+    // First call for generation provider, second for fix provider
+    vi.mocked(createLLMProvider)
+      .mockReturnValueOnce(mockProvider as never)
+      .mockReturnValueOnce(mockFixProvider as never);
+
+    generator = new TestGenerator({
+      apiKey: 'test-key',
+      provider: 'openai',
+      model: 'gpt-3.5-turbo',
+      fixModel: 'gpt-4',
+      maxFixAttempts: 3,
+    });
+
+    // Generation should use regular provider
+    const target = {
+      filePath: 'src/utils.ts',
+      functionName: 'add',
+      functionType: 'function' as const,
+      code: 'export function add() {}',
+      context: '',
+      startLine: 1,
+      endLine: 1,
+      changedRanges: [],
+    };
+
+    await generator.generateTest({
+      target,
+      framework: 'jest',
+    });
+
+    expect(mockProvider.generate).toHaveBeenCalled();
+    expect(mockFixProvider.generate).not.toHaveBeenCalled();
+
+    // Fix should use fix provider
+    await generator.fixTest({
+      testCode: 'failing test',
+      errorMessage: 'Error',
+      testOutput: undefined,
+      originalCode: 'export function add() {}',
+      framework: 'jest',
+      attempt: 1,
+      maxAttempts: 3,
+    });
+
+    expect(mockFixProvider.generate).toHaveBeenCalled();
+    expect(createLLMProvider).toHaveBeenCalledTimes(2);
+    // Verify fix provider was created with fixModel
+    expect(createLLMProvider).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'gpt-4' })
+    );
+  });
+
+  it('should use same provider when fixModel is not provided', async () => {
+    vi.mocked(createLLMProvider).mockReturnValue(mockProvider as never);
+
+    generator = new TestGenerator({
+      apiKey: 'test-key',
+      provider: 'openai',
+      model: 'gpt-4',
+      maxFixAttempts: 3,
+    });
+
+    await generator.fixTest({
+      testCode: 'failing test',
+      errorMessage: 'Error',
+      testOutput: undefined,
+      originalCode: 'export function add() {}',
+      framework: 'jest',
+      attempt: 1,
+      maxAttempts: 3,
+    });
+
+    expect(mockProvider.generate).toHaveBeenCalled();
+    expect(createLLMProvider).toHaveBeenCalledTimes(1);
+  });
 });
 

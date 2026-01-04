@@ -16,14 +16,24 @@ Kakarot CI automatically generates comprehensive unit tests using AI. While opti
 ## Features
 
 - 🤖 **AI-Powered Test Generation**: Uses LLMs (OpenAI, Anthropic, Google) to generate comprehensive unit tests
+- 🎯 **Dual-Model Strategy**: Use cheaper models for generation, stronger models for fixing (e.g., Haiku for generation, Sonnet for fixing)
 - 🔍 **Smart Code Analysis**: Analyzes AST to extract functions and understand code structure
 - 🎯 **Targeted Testing**: Generates tests for specific functions, files, or entire codebases
-- 🔄 **Auto-Fix Loop**: Automatically fixes failing tests with multiple retry attempts (default: 5 attempts)
+- 🔄 **Intelligent Auto-Fix Loop**: Automatically fixes failing tests with multiple retry attempts (default: 5 attempts)
+  - **Test Preservation**: Prevents LLMs from deleting tests - rejects fixes that remove >5% of tests
+  - **Minimal Test Fallback**: If a test can't be fixed, replaces it with a minimal passing test instead of deleting
+  - **Type Checking**: Automatically type-checks and fixes type errors before running tests
+  - **Syntax Validation**: Validates syntax before writing to prevent corrupted files
 - ✅ **File Validation**: Validates generated tests for syntax errors, type errors, and private property access before writing
 - 🛡️ **Private Property Protection**: Prevents tests from accessing private class properties
 - 🧹 **Import Cleanup**: Automatically removes unused imports from generated test files
 - 📊 **Coverage Reports**: Optional test coverage analysis and summaries
 - 🧠 **Smart Context Optimization**: Automatically optimizes context to fit within model token limits
+- ⚡ **Smart Rate Limit Handling**: 
+  - Uses exact retry-after times from API responses
+  - Token capacity checks before starting new work
+  - Exponential backoff with smart wait calculations
+  - Distinguishes quota errors from rate limits (fails fast on quota errors)
 - 🚀 **GitHub Integration**: Seamlessly integrates with GitHub Actions and PR workflows (optional)
 - ⚙️ **Flexible Configuration**: Supports Jest and Vitest, configurable test locations and patterns
 - 📝 **PR Comments**: Automatically posts test generation summaries to pull requests
@@ -155,9 +165,10 @@ Kakarot CI can be configured via:
   - Set to `-1` for infinite attempts (no limit)
   - No upper limit (previously capped at 10)
   - Example: `5` (default), `10`, `-1` (infinite)
-  - Maximum number of attempts to fix failing tests (0-10)
-  - Example: `5`
   - Note: Kakarot CI automatically optimizes context to fit within model limits during fix attempts
+  - **Test Preservation**: The fix loop automatically rejects fixes that remove >5% of tests
+  - **Minimal Test Fallback**: If a test can't be fixed, it's replaced with a minimal passing test instead of deleted
+  - **Type Checking**: All fixed files are type-checked before tests run again
 
 - **`requestDelay`** (number, optional, default: `0`)
   - Delay in milliseconds between API requests to avoid rate limits
@@ -277,16 +288,17 @@ Kakarot CI automatically retries on rate limit errors with exponential backoff, 
 /** @type {import('@kakarot-ci/core').KakarotConfig} */
 const config = {
   // Required: API key (can also be set via KAKAROT_API_KEY env var)
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.KAKAROT_API_KEY,
   
   // Required: Test framework
   framework: 'vitest',
   
   // Optional: LLM provider settings (can also be set via PROVIDER and MODEL env vars)
-  provider: 'openai', // 'openai' | 'anthropic' | 'google'
-  model: 'gpt-4',
+  provider: 'anthropic', // 'openai' | 'anthropic' | 'google'
+  model: 'claude-haiku-4-5-20251001', // Cheaper model for generation
+  fixModel: 'claude-sonnet-4-5-20250929', // Stronger model for fixing (better instruction following)
   temperature: 0.2,
-  fixTemperature: 0.2,
+  fixTemperature: 0.1, // Lower temperature for more deterministic fixes
   maxTokens: 4000,
   
   // File filtering
@@ -428,6 +440,65 @@ If your organization restricts `GITHUB_TOKEN` permissions, you'll need to use a 
 ```
 
 Create a PAT with `repo` scope and add it as a repository secret named `GH_PAT`.
+
+## Advanced Features
+
+### Dual-Model Strategy (Cost Optimization)
+
+Kakarot CI supports using different models for generation and fixing, allowing you to optimize costs while maintaining quality:
+
+```javascript
+{
+  model: 'claude-haiku-4-5-20251001',  // Fast, cheap model for generation
+  fixModel: 'claude-sonnet-4-5-20250929', // Stronger model for fixing
+}
+```
+
+**Benefits:**
+- **Cost Savings**: Use cheaper models (Haiku, GPT-3.5) for bulk generation
+- **Quality Assurance**: Use stronger models (Sonnet, GPT-4) for fixing, where instruction-following is critical
+- **Better Results**: Stronger models are less likely to delete tests or make incorrect fixes
+
+**Example Output:**
+```
+[kakarot-ci:debug] Using separate fix model: claude-sonnet-4-5-20250929 (generation model: claude-haiku-4-5-20251001)
+[kakarot-ci:debug] Sending test fix request to LLM (attempt 1, model: claude-sonnet-4-5-20250929, limit: 8000 tokens)
+```
+
+### Test Preservation & Rejection Logic
+
+Kakarot CI automatically protects your test coverage by rejecting fixes that remove too many tests:
+
+- **Automatic Rejection**: Fixes that remove >5% of tests are automatically rejected
+- **Minimal Test Fallback**: If a test can't be fixed, it's replaced with a minimal passing test instead of deleted
+- **Coverage Protection**: Your test count is preserved even if the LLM tries to simplify by removing tests
+- **Loop Continuation**: The fix loop continues through all attempts even when fixes are rejected, allowing retries with stronger instructions
+
+**Example Output:**
+```
+[kakarot-ci] ⚠️ REJECTING FIX: Fixed test file has 3 tests (down from 133, 97.7% loss). Too many tests removed.
+[kakarot-ci] ⚠️ The LLM should fix tests, not delete them. If a test can't be fixed, it should be replaced with a minimal passing test.
+[kakarot-ci] ⚠️ Rejecting this fix and will retry with stronger instructions.
+[kakarot-ci] ⚠️ Will retry fix with stronger instructions to prevent test removal
+```
+
+### Smart Rate Limit Handling
+
+Kakarot CI includes advanced rate limit handling:
+
+- **Exact Retry Times**: Uses precise retry-after times from API responses (not rounded)
+- **Token Capacity Checks**: Checks available tokens before starting new work
+- **Smart Wait Calculation**: Calculates additional wait time if tokens are still insufficient
+- **Quota Error Detection**: Distinguishes quota errors from rate limits (fails fast on quota errors)
+- **Network Error Retries**: Retries network errors with exponential backoff
+
+### Type Checking in Fix Loop
+
+All fixed test files are automatically type-checked before tests run again:
+
+- **Automatic Type Fixing**: Missing imports are automatically added
+- **Type Error Detection**: TypeScript errors are caught before tests run
+- **Validation Before Execution**: Ensures tests never run against invalid code
 
 ## How It Works
 

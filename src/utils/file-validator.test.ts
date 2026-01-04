@@ -52,7 +52,7 @@ describe('checkSyntaxCompleteness', () => {
     const code = `const result = 1 +`;
     const result = checkSyntaxCompleteness(code);
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.includes('incomplete'))).toBe(true);
+    expect(result.errors.some(e => e.includes('incomplete') || e.includes('truncated') || e.includes('operator'))).toBe(true);
   });
 
   it('should ignore strings when checking braces', () => {

@@ -20,11 +20,11 @@ export async function writeTestFiles(
     const dir = dirname(fullPath);
 
     try {
-      // Create directory if it doesn't exist
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
-        debug(`Created directory: ${dir}`);
-      }
+    // Create directory if it doesn't exist
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+      debug(`Created directory: ${dir}`);
+    }
 
       // Validate file before writing
       const privateProperties = privatePropertiesMap?.get(relativePath);
@@ -63,8 +63,8 @@ export async function writeTestFiles(
       // Move temp file to final location (atomic)
       renameSync(tempPath, fullPath);
       
-      writtenPaths.push(relativePath);
-      debug(`Wrote test file: ${relativePath}`);
+    writtenPaths.push(relativePath);
+    debug(`Wrote test file: ${relativePath}`);
     } catch (err) {
       // Clean up temp file if it exists
       try {
