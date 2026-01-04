@@ -7,6 +7,7 @@ export const KakarotConfigSchema = z.object({
   githubRepo: z.string().optional(),
   provider: z.enum(['openai', 'anthropic', 'google']).optional(),
   model: z.string().optional(),
+  fixModel: z.string().optional(), // Optional separate model for fixing (stronger model recommended)
   maxTokens: z.number().int().min(1).max(100000).optional(),
   temperature: z.number().min(0).max(2).optional(),
   fixTemperature: z.number().min(0).max(2).optional(),

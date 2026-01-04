@@ -17,7 +17,7 @@ import { findProjectRoot } from '../utils/config-loader.js';
 import { checkSyntaxCompleteness } from '../utils/file-validator.js';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { info, error, warn, success, progress } from '../utils/logger.js';
+import { info, error, warn, success, progress, debug } from '../utils/logger.js';
 import type { TestResult } from '../types/test-runner.js';
 import type { CoverageReport } from '../types/coverage.js';
 
@@ -99,10 +99,49 @@ export async function generateTestsFromTargets(
   let testsGenerated = 0;
   let testsFailed = 0;
   const errors: Array<{ target: string; error: string }> = [];
+  
+  // Track token capacity to avoid starting work without sufficient tokens
+  let lastRateLimitInfo: {
+    availableTokens: number;
+    requestTokens: number;
+    refillRate: number; // tokens per minute
+    timestamp: number; // when this info was recorded
+  } | null = null;
 
   for (let i = 0; i < limitedTargets.length; i++) {
     const target = limitedTargets[i];
     progress(i + 1, limitedTargets.length, `Generating test for ${target.functionName}`);
+
+    // Check token capacity before starting new function generation
+    // Estimate tokens needed for this request (~2000-4000 tokens for test generation)
+    const estimatedTokensNeeded = 3000; // Conservative estimate
+    if (lastRateLimitInfo) {
+      const timeSinceLastCheck = (Date.now() - lastRateLimitInfo.timestamp) / 1000 / 60; // minutes
+      const tokensRefilled = timeSinceLastCheck * lastRateLimitInfo.refillRate;
+      const currentAvailableTokens = Math.min(
+        lastRateLimitInfo.availableTokens + tokensRefilled,
+        30000 // OpenAI TPM limit (adjust per provider if needed)
+      );
+      
+      if (currentAvailableTokens < estimatedTokensNeeded) {
+        // Not enough tokens available - wait for refill
+        const tokensNeeded = estimatedTokensNeeded - currentAvailableTokens;
+        const waitMinutes = tokensNeeded / lastRateLimitInfo.refillRate;
+        const waitMs = Math.ceil(waitMinutes * 60 * 1000);
+        
+        if (waitMs > 0 && waitMs < 60000) { // Only wait if less than 1 minute
+          warn(`Insufficient token capacity (${Math.floor(currentAvailableTokens)} available, ${estimatedTokensNeeded} needed). Waiting ${Math.ceil(waitMs / 1000)}s for token refill...`);
+          await new Promise(resolve => setTimeout(resolve, waitMs));
+          // Update available tokens after waiting
+          const newTimeSinceCheck = (Date.now() - lastRateLimitInfo.timestamp) / 1000 / 60;
+          lastRateLimitInfo.availableTokens = Math.min(
+            lastRateLimitInfo.availableTokens + (newTimeSinceCheck * lastRateLimitInfo.refillRate),
+            30000
+          );
+          lastRateLimitInfo.timestamp = Date.now();
+        }
+      }
+    }
 
     // Add delay between requests to avoid rate limits (if configured)
     if (i > 0 && config.requestDelay && config.requestDelay > 0) {
@@ -120,15 +159,15 @@ export async function generateTestsFromTargets(
         existingContent = existingFileData.content;
       } else {
         // First time processing this file - read from disk/GitHub
-        if (getExistingTestFile) {
-          existingContent = await getExistingTestFile(testFilePath);
-        } else {
-          // Default: check filesystem
-          const fullTestPath = join(projectRoot, testFilePath);
-          if (existsSync(fullTestPath)) {
-            existingContent = readFileSync(fullTestPath, 'utf-8');
-          }
+      if (getExistingTestFile) {
+        existingContent = await getExistingTestFile(testFilePath);
+      } else {
+        // Default: check filesystem
+        const fullTestPath = join(projectRoot, testFilePath);
+        if (existsSync(fullTestPath)) {
+          existingContent = readFileSync(fullTestPath, 'utf-8');
         }
+      }
       }
       
       // Check if this function/class already has tests
@@ -142,7 +181,7 @@ export async function generateTestsFromTargets(
 
       // Calculate correct import path from test file to source file
       const importPath = calculateImportPath(testFilePath, target.filePath);
-      
+
       let result;
       if (mode === 'scaffold') {
         result = await testGenerator.generateTestScaffold(target, existingContent, framework, testFilePath, importPath);
@@ -191,7 +230,7 @@ export async function generateTestsFromTargets(
           const { mergeTestFiles } = await import('../utils/test-file-merger.js');
           fileData = { content: await mergeTestFiles(baseContent, formattedCode), targets: [] };
         } else {
-          fileData = { content: formattedCode, targets: [] };
+        fileData = { content: formattedCode, targets: [] };
         }
         testFiles.set(testFilePath, fileData);
         testFileToTargetsMap[testFilePath] = [];
@@ -214,14 +253,82 @@ export async function generateTestsFromTargets(
       testsGenerated++;
 
       info(`✓ Generated test for ${target.functionName}`);
+      
+      // Clear rate limit info on successful generation (tokens were used successfully)
+      lastRateLimitInfo = null;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
+      
+      // Check if this is a rate limit error with token information
+      const isRateLimitWithTokens = err && typeof err === 'object' && 
+        'isRateLimit' in err && (err as any).isRateLimit === true &&
+        'availableTokens' in err && (err as any).availableTokens !== null &&
+        'requestTokens' in err && (err as any).requestTokens !== null &&
+        'refillRate' in err && (err as any).refillRate !== null;
+      
+      if (isRateLimitWithTokens) {
+        // Store token information for capacity checking
+        lastRateLimitInfo = {
+          availableTokens: (err as any).availableTokens,
+          requestTokens: (err as any).requestTokens,
+          refillRate: (err as any).refillRate,
+          timestamp: Date.now(),
+        };
+        warn(`Rate limit hit: ${lastRateLimitInfo.availableTokens} tokens available, ${lastRateLimitInfo.requestTokens} requested. Refill rate: ${lastRateLimitInfo.refillRate} tokens/min.`);
+      }
+      
+      // Classify errors: quota errors and configuration errors should fail fast
+      const isQuotaError = errorMessage.toLowerCase().includes('exceeded your current quota') ||
+                          errorMessage.toLowerCase().includes('quota exceeded') ||
+                          (errorMessage.toLowerCase().includes('quota') && 
+                           !errorMessage.toLowerCase().includes('rate limit')) ||
+                          errorMessage.toLowerCase().includes('billing');
+      
+      const isConfigurationError = errorMessage.includes('400') || 
+                                   errorMessage.includes('401') ||
+                                   errorMessage.includes('Unsupported parameter') ||
+                                   errorMessage.includes('max_tokens') ||
+                                   errorMessage.includes('max_completion_tokens');
+      
+      if (isQuotaError) {
+        // Quota errors won't resolve by retrying - fail fast
+        error(`✗ Quota error detected: ${errorMessage}`);
+        error(`Quota exceeded. Please check your billing and plan. This error won't resolve by retrying.`);
+        error(`Stopping all test generation attempts.`);
+        // Stop generation immediately for quota errors
+        throw new Error(`Quota exceeded: ${errorMessage}. Please check your billing and plan.`);
+      }
+      
+      if (isConfigurationError) {
+        // Configuration errors won't resolve - fail fast
+        error(`✗ Configuration error detected: ${errorMessage}`);
+        error(`This error will occur for all test generations. Please check your configuration.`);
+        if (errorMessage.includes('max_tokens') || errorMessage.includes('max_completion_tokens')) {
+          error(`Hint: GPT-5 and newer models require 'max_completion_tokens' instead of 'max_tokens'.`);
+          error(`Please use gpt-4o, gpt-4-turbo, or gpt-4, or wait for GPT-5 support.`);
+        }
+        // Stop generation immediately for configuration errors
+        throw new Error(`Configuration error: ${errorMessage}. Please fix your configuration and try again.`);
+      }
+      
       error(`✗ Failed to generate test for ${target.functionName}: ${errorMessage}`);
       errors.push({
         target: `${target.filePath}:${target.functionName}`,
         error: errorMessage,
       });
       testsFailed++;
+      
+      // If we've seen the same configuration error 2+ times, fail fast
+      if (errors.length >= 2) {
+        const recentErrors = errors.slice(-2).map(e => e.error);
+        const allSameConfigError = recentErrors.every(e => 
+          e.includes('400') || e.includes('401') || e.includes('Unsupported parameter')
+        );
+        if (allSameConfigError) {
+          error(`Multiple configuration errors detected. Stopping generation to avoid wasting API calls.`);
+          throw new Error(`Configuration error detected: ${recentErrors[0]}. Please fix your configuration and try again.`);
+        }
+      }
     }
   }
 
@@ -232,6 +339,7 @@ export async function generateTestsFromTargets(
   let finalTestFiles = testFiles;
   let finalTestsFailed = testsFailed;
   let coverageEnabled = false;
+  let coverageAttempted = false; // Track if coverage was actually attempted (passed to runTests)
   let testResults: TestResult[] | undefined = undefined;
 
   if (testFiles.size > 0) {
@@ -258,6 +366,115 @@ export async function generateTestsFromTargets(
     }
     info(`Wrote ${writtenPaths.length} test file(s) to disk`);
 
+    // Type check all written test files and fix type errors before running tests
+    if (writtenPaths.length > 0 && mode !== 'scaffold') {
+      info('Type checking all test files before running tests...');
+      const { validateTypeScript } = await import('../utils/file-validator.js');
+      const { readFileSync } = await import('fs');
+      const { join } = await import('path');
+      const { fixMissingImports } = await import('../utils/import-fixer.js');
+      
+      let typeErrorsFixed = true;
+      let typeCheckAttempts = 0;
+      const maxTypeCheckAttempts = 10;
+      
+      while (typeErrorsFixed && typeCheckAttempts < maxTypeCheckAttempts) {
+        typeCheckAttempts++;
+        typeErrorsFixed = false;
+        const filesWithErrors: Array<{ path: string; errors: string[]; missingImports?: string[] }> = [];
+        
+        // Type check all files
+        for (const testPath of writtenPaths) {
+          const fullPath = join(projectRoot, testPath);
+          if (!existsSync(fullPath)) {
+            continue;
+          }
+          
+          const validation = await validateTypeScript(fullPath, projectRoot);
+          
+          if (!validation.valid && validation.errors.length > 0) {
+            // Check if these are type errors (not syntax errors - those should be caught earlier)
+            const typeErrors = validation.errors.filter((e: string) => 
+              !e.includes('Unclosed') && 
+              !e.includes('Syntax') && 
+              !e.includes('syntax') &&
+              !e.includes('brace') &&
+              !e.includes('parenthes') &&
+              !e.includes('bracket')
+            );
+            
+            if (typeErrors.length > 0 || validation.missingImports) {
+              filesWithErrors.push({
+                path: testPath,
+                errors: typeErrors,
+                missingImports: validation.missingImports,
+              });
+            }
+          }
+        }
+        
+        // Fix type errors in all files
+        if (filesWithErrors.length > 0) {
+          info(`Found type errors in ${filesWithErrors.length} file(s), fixing...`);
+          typeErrorsFixed = true;
+          
+          const { fixTypeErrors } = await import('../utils/type-error-fixer.js');
+          
+          for (const { path: testPath, missingImports, errors } of filesWithErrors) {
+            const fullPath = join(projectRoot, testPath);
+            let content = readFileSync(fullPath, 'utf-8');
+            let fixed = false;
+            
+            // Fix missing imports first
+            if (missingImports && missingImports.length > 0) {
+              const isVitest = content.includes("from 'vitest'") || content.includes('from "vitest"');
+              const framework = isVitest ? 'vitest' : 'jest';
+              content = fixMissingImports(content, missingImports, framework);
+              fixed = true;
+            }
+            
+            // Attempt to auto-fix common type errors
+            if (errors && errors.length > 0) {
+              const { fixedCode, fixedErrors, remainingErrors } = fixTypeErrors(content, errors);
+              if (fixedErrors.length > 0) {
+                content = fixedCode;
+                fixed = true;
+                debug(`Auto-fixed ${fixedErrors.length} type error(s) in ${testPath}`);
+                if (remainingErrors.length > 0) {
+                  warn(`Could not auto-fix ${remainingErrors.length} type error(s) in ${testPath}:`);
+                  remainingErrors.slice(0, 3).forEach(err => warn(`  - ${err}`));
+                }
+              }
+            }
+            
+            if (fixed) {
+              // Write fixed content
+              const fs = await import('fs/promises');
+              const tempPath = fullPath + '.tmp';
+              await fs.writeFile(tempPath, content, 'utf-8');
+              await fs.rename(tempPath, fullPath);
+              
+              // Update in-memory test files
+              const fileData = testFiles.get(testPath);
+              if (fileData) {
+                fileData.content = content;
+              }
+              
+              info(`✓ Fixed type errors in ${testPath}`);
+            }
+          }
+        } else {
+          typeErrorsFixed = false;
+        }
+      }
+      
+      if (typeCheckAttempts >= maxTypeCheckAttempts && typeErrorsFixed) {
+        warn(`Type checking reached maximum attempts (${maxTypeCheckAttempts}). Proceeding with remaining type errors.`);
+      } else if (!typeErrorsFixed) {
+        info('All test files pass type checking');
+      }
+    }
+
     // Run tests and fix failures if not in scaffold mode
     if (mode !== 'scaffold') {
       const testRunner = createTestRunner(framework);
@@ -265,23 +482,24 @@ export async function generateTestsFromTargets(
       try {
         info('Running tests and fixing failures...');
         const fixedTestFiles = await runTestsAndFix(
-          testRunner,
-          testFiles,
-          writtenPaths,
-          framework,
-          packageManager,
-          projectRoot,
-          testGenerator,
-          config.maxFixAttempts,
-          config,
-          testFileToTargetsMap
-        );
+        testRunner,
+        testFiles,
+        writtenPaths,
+        framework,
+        packageManager,
+        projectRoot,
+        testGenerator,
+        config.maxFixAttempts,
+        config,
+        testFileToTargetsMap
+      );
         
         // Update final test files with fixed versions
         finalTestFiles = fixedTestFiles;
         
         // Run final tests (with coverage if enabled in full mode)
         coverageEnabled = mode === 'full' && config.enableCoverage;
+        coverageAttempted = coverageEnabled; // Track if coverage was actually attempted
         testResults = await testRunner.runTests({
           testFiles: writtenPaths,
           framework,
@@ -305,14 +523,14 @@ export async function generateTestsFromTargets(
     }
   }
 
-  // Read coverage report if coverage was enabled
+  // Read coverage report if coverage was enabled and attempted
   let coverageReport = null;
   let coverageDelta = null;
-  if (coverageEnabled) {
+  if (coverageEnabled && coverageAttempted) {
     try {
       // Get baseline coverage before running new tests (if coverage report exists)
       const baselineCoverage = readCoverageReport(projectRoot, framework);
-      
+
       // Read coverage report after running tests
       coverageReport = readCoverageReport(projectRoot, framework);
       if (coverageReport) {
@@ -324,16 +542,67 @@ export async function generateTestsFromTargets(
           info(`Coverage delta: +${coverageDelta.lines.toFixed(1)}% lines, +${coverageDelta.functions.toFixed(1)}% functions`);
         }
       } else {
-        warn('Could not read coverage report. Ensure:');
-        warn('  1. Coverage package is installed (@vitest/coverage-v8 for Vitest or @jest/coverage for Jest)');
-        warn('  2. Coverage is configured in your test framework config (vitest.config.ts or jest.config.js)');
-        warn('  3. Coverage reporter includes "json" (e.g., coverage.reporter: ["text", "json"])');
-        warn('  4. Tests ran successfully (coverage is generated after tests complete)');
+        // Coverage was attempted but not generated - check if it's a setup issue
+        const { existsSync } = await import('fs');
+        const { join } = await import('path');
+        const { readFileSync } = await import('fs');
+        const coverageDir = join(projectRoot, 'coverage');
+        const coverageFile = join(projectRoot, 'coverage', 'coverage-final.json');
+        
+        // Check if coverage package is installed
+        const packageJsonPath = join(projectRoot, 'package.json');
+        let coveragePackageInstalled = false;
+        if (existsSync(packageJsonPath)) {
+          try {
+            const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+            const coveragePackage = framework === 'vitest' ? '@vitest/coverage-v8' : '@jest/coverage';
+            coveragePackageInstalled = 
+              (packageJson.dependencies && packageJson.dependencies[coveragePackage]) ||
+              (packageJson.devDependencies && packageJson.devDependencies[coveragePackage]);
+          } catch {
+            // Ignore package.json parsing errors
+          }
+        }
+        
+        // Check if coverage config exists
+        const configPath = framework === 'vitest' 
+          ? join(projectRoot, 'vitest.config.ts')
+          : join(projectRoot, 'jest.config.js');
+        const configExists = existsSync(configPath) || existsSync(join(projectRoot, 'vitest.config.js')) || 
+                            existsSync(join(projectRoot, 'jest.config.ts'));
+        
+        if (!existsSync(coverageDir)) {
+          // Coverage directory doesn't exist - check if it's a setup issue
+          if (!coveragePackageInstalled) {
+            // Setup issue: package not installed
+            warn('Coverage package not found. Ensure:');
+            warn(`  1. Coverage package is installed: ${framework === 'vitest' ? '@vitest/coverage-v8' : '@jest/coverage'}`);
+            warn(`  2. Run: ${packageManager} add -D ${framework === 'vitest' ? '@vitest/coverage-v8' : '@jest/coverage'}`);
+          } else if (!configExists) {
+            // Setup issue: config missing
+            warn('Coverage config not found. Ensure:');
+            warn(`  1. Coverage is configured in your test framework config (${framework === 'vitest' ? 'vitest.config.ts' : 'jest.config.js'})`);
+            warn('  2. Coverage reporter includes "json" (e.g., coverage.reporter: ["text", "json"])');
+          } else {
+            // Coverage was attempted but directory wasn't created - likely a generation issue
+            debug('Coverage was attempted but directory was not created. Coverage may not have been generated (check test framework logs).');
+          }
+        } else if (!existsSync(coverageFile)) {
+          // Coverage directory exists but file doesn't - coverage may not have been generated
+          // This can happen if tests fail or have unhandled rejections
+          debug('Coverage directory exists but coverage-final.json not found. Coverage may not have been generated (tests may have failed or had unhandled rejections).');
+        } else {
+          // File exists but couldn't be read - parsing issue
+          warn('Coverage file exists but could not be read. Check file format.');
+        }
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       warn(`Failed to read coverage report: ${errorMessage}`);
     }
+  } else if (coverageEnabled && !coverageAttempted) {
+    // Coverage was enabled but not attempted (e.g., in fix loop)
+    debug('Coverage is enabled but was not attempted in this run (fix loop runs without coverage).');
   }
 
   // Initialize result
@@ -352,7 +621,15 @@ export async function generateTestsFromTargets(
     testResults: testResults,
   };
 
-  success(`Completed: ${testsGenerated} test(s) generated, ${finalTestsFailed} failed`);
+  // Report completion - use appropriate log level based on failures
+  if (errors.length > 0) {
+    error(`❌ Completed with errors: ${testsGenerated} test(s) generated, ${finalTestsFailed} test(s) failed, ${errors.length} error(s)`);
+  } else if (finalTestsFailed > 0) {
+    error(`❌ Completed with failing tests: ${testsGenerated} test(s) generated, ${finalTestsFailed} test(s) failed`);
+    error(`The fix loop should have made all tests pass. This indicates tests could not be fixed.`);
+  } else {
+    success(`✓ Completed successfully: ${testsGenerated} test(s) generated, all tests passing`);
+  }
 
   return result;
 }
@@ -419,8 +696,25 @@ async function runTestsAndFix(
       }
     }
 
-    // Fix each failing test file
+    // Fix each failing test file - collect all validated fixes first, then write all at once
+    // This ensures all files are validated and written before tests run again
+    const fixesToApply: Array<{ testFile: string; formattedCode: string; fileData: { content: string; targets: string[] } }> = [];
     let fixedAny = false;
+    
+    // Save original content as last valid version BEFORE making any changes
+    // This allows us to revert if syntax errors persist
+    for (const { testFile } of failures) {
+      const currentFileData = currentTestFiles.get(testFile);
+      if (currentFileData && !('_lastValidContent' in currentFileData)) {
+        // Save current content as last valid before we start making changes
+        const fileDataWithLastValid = {
+          ...currentFileData,
+          _lastValidContent: currentFileData.content,
+        } as typeof currentFileData & { _lastValidContent: string };
+        currentTestFiles.set(testFile, fileDataWithLastValid);
+      }
+    }
+    
     for (const { testFile, result } of failures) {
       try {
         const currentFileData = currentTestFiles.get(testFile);
@@ -432,27 +726,29 @@ async function runTestsAndFix(
         // Track last valid version and syntax error attempts
         const lastValidContent = currentFileData && '_lastValidContent' in currentFileData
           ? (currentFileData as { _lastValidContent?: string })._lastValidContent
-          : currentContent; // Use current as last valid if no previous valid version
+          : undefined;
         
         const syntaxErrorAttempts = currentFileData && '_syntaxErrorAttempts' in currentFileData
           ? ((currentFileData as { _syntaxErrorAttempts?: number })._syntaxErrorAttempts || 0)
           : 0;
         
-        // Don't limit syntax error attempts too aggressively - let formatter try to fix them
-        // Only revert if we've had many attempts (10+) AND we have a valid version to revert to
-        if (syntaxErrorAttempts >= 10 && lastValidContent) {
+        // Revert after 3 syntax error attempts if we have a valid version to revert to
+        // This prevents infinite loops with broken code
+        if (syntaxErrorAttempts >= 3 && lastValidContent && lastValidContent !== currentContent) {
           warn(`Too many syntax error attempts (${syntaxErrorAttempts}) for ${testFile}, reverting to last valid version`);
           if (lastValidContent && lastValidContent !== currentContent) {
             currentTestFiles.set(testFile, {
               content: lastValidContent,
               targets: currentFileData.targets,
             });
-            // Update file on disk
-            const fs = await import('fs/promises');
-            const path = await import('path');
-            const fullPath = path.join(projectRoot, testFile);
-            await fs.writeFile(fullPath, lastValidContent, 'utf-8');
-            info(`Reverted ${testFile} to last valid version`);
+            // Add to fixes to apply (will be written atomically with others)
+            fixesToApply.push({
+              testFile,
+              formattedCode: lastValidContent,
+              fileData: { content: lastValidContent, targets: currentFileData.targets },
+            });
+            info(`Reverted ${testFile} to last valid version (will write with other fixes)`);
+            fixedAny = true;
           }
           // Skip this file for now, try again next iteration with test logic fixes only
           continue;
@@ -483,7 +779,26 @@ async function runTestsAndFix(
           stack: f.stack,
         }));
 
-        const fixedResult = await testGenerator.fixTest({
+        // Get validation errors if available (for syntax errors with line numbers)
+        const fileDataForErrors = currentTestFiles.get(testFile);
+        const validationErrors = fileDataForErrors && '_validationErrors' in fileDataForErrors
+          ? ((fileDataForErrors as { _validationErrors?: string[] })._validationErrors)
+          : undefined;
+        
+        // Check if previous fix was rejected for removing tests
+        const testRemovalRejected = fileDataForErrors && '_testRemovalRejected' in fileDataForErrors
+          ? ((fileDataForErrors as { _testRemovalRejected?: boolean })._testRemovalRejected)
+          : false;
+        
+        // Retry network errors with exponential backoff (all attempts, not just final)
+        const isFinalAttempt = attempt + 1 >= maxFixAttempts;
+        let fixedResult;
+        let retryCount = 0;
+        const maxNetworkRetries = isFinalAttempt ? 5 : 3; // More retries on final attempt, but retry on all attempts
+        
+        while (retryCount <= maxNetworkRetries) {
+          try {
+            fixedResult = await testGenerator.fixTest({
           testCode: currentContent,
           errorMessage: errorMessages,
           testOutput,
@@ -495,10 +810,45 @@ async function runTestsAndFix(
           functionNames: functionNames.length > 0 ? functionNames : undefined,
           failingTests: failingTests.length > 0 ? failingTests : undefined,
           sourceFilePath,
-        });
+              _validationErrors: validationErrors,
+              _testRemovalRejected: testRemovalRejected,
+            });
+            break; // Success, exit retry loop
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            const isNetworkError = errorMessage.toLowerCase().includes('fetch failed') ||
+                                  errorMessage.toLowerCase().includes('network') ||
+                                  errorMessage.toLowerCase().includes('econnrefused') ||
+                                  errorMessage.toLowerCase().includes('etimedout') ||
+                                  errorMessage.toLowerCase().includes('enotfound') ||
+                                  errorMessage.toLowerCase().includes('eai_again') ||
+                                  errorMessage.toLowerCase().includes('socket') ||
+                                  errorMessage.toLowerCase().includes('connection');
+            
+            if (isNetworkError && retryCount < maxNetworkRetries) {
+              retryCount++;
+              const backoffDelay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000); // Exponential backoff, max 10s
+              const attemptLabel = isFinalAttempt ? 'final attempt' : `attempt ${attempt + 1}`;
+              warn(`Network error on ${attemptLabel} (retry ${retryCount}/${maxNetworkRetries}): ${errorMessage}`);
+              warn(`Retrying in ${Math.ceil(backoffDelay / 1000)}s...`);
+              await new Promise(resolve => setTimeout(resolve, backoffDelay));
+              continue; // Retry
+            } else {
+              throw err; // Not a network error, or out of retries
+            }
+          }
+        }
+        
+        if (!fixedResult) {
+          throw new Error('Failed to fix test after network retries');
+        }
 
         // Apply code standards to fixed code
         let formattedCode = fixedResult.testCode;
+        
+        // Validate test count before processing - ensure we're not losing tests
+        const originalTestCount = (currentContent.match(/it\(/g) || []).length;
+        const originalDescribeCount = (currentContent.match(/describe\(/g) || []).length;
         
         // ALWAYS format to fix syntax errors before validation
         // Formatting can auto-fix many syntax errors (missing braces, etc.)
@@ -507,6 +857,25 @@ async function runTestsAndFix(
           formattedCode = await formatGeneratedCode(formattedCode, projectRoot);
         } catch {
           // If formatting fails, continue with original code
+        }
+        
+        // Check test count after formatting
+        const fixedTestCount = (formattedCode.match(/it\(/g) || []).length;
+        const fixedDescribeCount = (formattedCode.match(/describe\(/g) || []).length;
+        
+        // Reject fixes that remove too many tests (more than 5% loss is suspicious)
+        // This prevents the LLM from deleting tests when it should be fixing them
+        if (originalTestCount > 10 && fixedTestCount < originalTestCount * 0.95) {
+          const testLoss = originalTestCount - fixedTestCount;
+          const lossPercent = ((testLoss / originalTestCount) * 100).toFixed(1);
+          warn(`⚠️ REJECTING FIX: Fixed test file has ${fixedTestCount} tests (down from ${originalTestCount}, ${lossPercent}% loss). Too many tests removed.`);
+          warn(`⚠️ The LLM should fix tests, not delete them. If a test can't be fixed, it should be replaced with a minimal passing test.`);
+          warn(`⚠️ Rejecting this fix and will retry with stronger instructions.`);
+          // Mark as invalid to prevent writing
+          throw new Error(`Fix rejected: Too many tests removed (${testLoss} tests, ${lossPercent}% loss). LLM should fix tests, not delete them.`);
+        } else if (originalTestCount > 0 && fixedTestCount < originalTestCount * 0.9) {
+          warn(`⚠️ Warning: Fixed test file has ${fixedTestCount} tests (down from ${originalTestCount}) and ${fixedDescribeCount} describe blocks (down from ${originalDescribeCount}). Tests may have been removed.`);
+          warn(`⚠️ If tests were removed, they should have been replaced with minimal passing tests instead.`);
         }
         
         if (!config.codeStyle?.formatGeneratedCode) {
@@ -536,7 +905,7 @@ async function runTestsAndFix(
           .flatMap(t => t.classPrivateProperties || [])
           .filter((v, i, a) => a.indexOf(v) === i); // Unique
 
-        // Validate fixed file before writing
+        // Validate fixed file before writing (CRITICAL: validation happens BEFORE writing)
         const { validateTestFile } = await import('../utils/file-validator.js');
         let validation = await validateTestFile(testFile, formattedCode, projectRoot, privateProperties);
         
@@ -555,24 +924,76 @@ async function runTestsAndFix(
           // Check if these are syntax errors (recoverable) vs other errors
           const syntaxErrors = validation.errors.filter(e => 
             e.includes('Unclosed') || e.includes('Syntax') || e.includes('syntax') || 
-            e.includes('brace') || e.includes('parenthes') || e.includes('bracket')
+            e.includes('brace') || e.includes('parenthes') || e.includes('bracket') ||
+            e.includes('truncated') || e.includes('incomplete')
           );
           
           if (syntaxErrors.length > 0) {
             // Syntax errors are recoverable - store them and retry in next iteration
+            // Include line numbers in validation errors for better LLM guidance
+            const syntaxErrorsWithLines = validation.errors.filter(e => 
+              e.includes('Unclosed') || e.includes('Syntax') || e.includes('syntax') || 
+              e.includes('brace') || e.includes('parenthes') || e.includes('bracket') ||
+              e.includes('line') || e.includes('column') || e.includes('truncated') || e.includes('incomplete')
+            );
+            
             // Increment syntax error attempt counter
             const fileDataWithErrors = currentTestFiles.get(testFile);
+            let syntaxErrorAttemptsForFile = 0;
+            let lastValidContent: string | undefined = undefined;
+            
             if (fileDataWithErrors) {
+              const currentSyntaxAttempts = fileDataWithErrors && '_syntaxErrorAttempts' in fileDataWithErrors
+                ? ((fileDataWithErrors as { _syntaxErrorAttempts?: number })._syntaxErrorAttempts || 0)
+                : 0;
+              syntaxErrorAttemptsForFile = currentSyntaxAttempts + 1;
+              
               const fileDataWithValidationErrors = {
                 ...fileDataWithErrors,
-                _validationErrors: validation.errors,
-                _syntaxErrorAttempts: (fileDataWithErrors && '_syntaxErrorAttempts' in fileDataWithErrors
-                  ? ((fileDataWithErrors as { _syntaxErrorAttempts?: number })._syntaxErrorAttempts || 0)
-                  : 0) + 1,
+                _validationErrors: syntaxErrorsWithLines, // Store syntax errors with line numbers
+                _syntaxErrorAttempts: syntaxErrorAttemptsForFile,
               } as typeof fileDataWithErrors & { _validationErrors: string[]; _syntaxErrorAttempts: number };
               currentTestFiles.set(testFile, fileDataWithValidationErrors);
+              
+              // Get last valid content if available
+              if ('_lastValidContent' in fileDataWithErrors) {
+                lastValidContent = (fileDataWithErrors as { _lastValidContent?: string })._lastValidContent;
+              }
+            } else {
+              syntaxErrorAttemptsForFile = 1;
             }
-            warn(`Syntax errors detected (attempt ${syntaxErrorAttempts + 1}/3) for ${testFile}, will retry with syntax fixes`);
+            
+            // After 3 syntax error attempts, revert to last valid version if available
+            // Check if we have a different valid version to revert to (not the same as current failed attempt)
+            if (syntaxErrorAttemptsForFile >= 3 && lastValidContent && fileDataWithErrors) {
+              // Only revert if the last valid content is different from what we just tried (formattedCode)
+              // This ensures we're reverting to a truly different version
+              if (lastValidContent !== formattedCode) {
+                warn(`Too many syntax error attempts (${syntaxErrorAttemptsForFile}) for ${testFile}, reverting to last valid version`);
+                currentTestFiles.set(testFile, {
+                  content: lastValidContent,
+                  targets: fileDataWithErrors.targets,
+                });
+                // Revert file on disk
+                const fs = await import('fs/promises');
+                const path = await import('path');
+                const fullPath = path.join(projectRoot, testFile);
+                await fs.writeFile(fullPath, lastValidContent, 'utf-8');
+                info(`Reverted ${testFile} to last valid version`);
+                // Mark that we made a change (revert) so the loop continues
+                // On final attempts, we'll still try to fix the actual test failures
+                fixedAny = true;
+                // Continue to next file, but keep the loop going so we can try again on final attempts
+                continue;
+              } else {
+                // Last valid is the same as current failed attempt - can't revert, just stop trying this file
+                warn(`Too many syntax error attempts (${syntaxErrorAttemptsForFile}) for ${testFile}, but no valid version to revert to. Will skip this file for now.`);
+                // Don't mark fixedAny - this file can't be fixed, but continue loop for other files
+                continue;
+              }
+            }
+            
+            warn(`Syntax errors detected (attempt ${syntaxErrorAttemptsForFile}) for ${testFile}, will retry with syntax fixes`);
             // Mark that we're still working on fixes (don't stop the loop)
             fixedAny = true; // Keep the loop going
           } else {
@@ -581,6 +1002,7 @@ async function runTestsAndFix(
             warn(`Non-syntax validation errors for ${testFile}, will retry in next attempt`);
             fixedAny = true;
           }
+          // CRITICAL: Do not write invalid files - skip writing and continue loop
           continue; // Skip writing this invalid file, but continue loop
         }
         
@@ -595,46 +1017,213 @@ async function runTestsAndFix(
           if ('_syntaxErrorAttempts' in cleanedData) {
             delete (cleanedData as { _syntaxErrorAttempts?: number })._syntaxErrorAttempts;
           }
-          // Save as last valid content
-          cleanedData._lastValidContent = formattedCode;
+          // Save as last valid content BEFORE updating
+          cleanedData._lastValidContent = fileDataToClean.content;
+          // Update content with validated code
+          cleanedData.content = formattedCode;
           currentTestFiles.set(testFile, cleanedData);
+          
+          // Add to fixes to apply (will be written atomically with others)
+          fixesToApply.push({
+            testFile,
+            formattedCode,
+            fileData: cleanedData,
+          });
+        } else {
+          // No existing file data, create new with last valid content
+          const newFileData = {
+          content: formattedCode,
+            targets: currentTestFiles.get(testFile)?.targets || [],
+          } as { content: string; targets: string[]; _lastValidContent?: string };
+          (newFileData as { _lastValidContent?: string })._lastValidContent = formattedCode;
+          currentTestFiles.set(testFile, newFileData);
+          
+          // Add to fixes to apply
+          fixesToApply.push({
+            testFile,
+            formattedCode,
+            fileData: newFileData,
+          });
         }
 
-        currentTestFiles.set(testFile, {
-          content: formattedCode,
-          targets: currentTestFiles.get(testFile)!.targets,
-        });
-
-        // Update file on disk atomically
-        const fs = await import('fs/promises');
-        const path = await import('path');
-        const fullPath = path.join(projectRoot, testFile);
-        const tempPath = fullPath + '.tmp';
-        
-        // Write to temp file first
-        await fs.writeFile(tempPath, formattedCode, 'utf-8');
-        
-        // Move to final location (atomic)
-        await fs.rename(tempPath, fullPath);
-
         fixedAny = true;
-        info(`✓ Fixed test file: ${testFile}`);
+        info(`✓ Fixed test file: ${testFile} (validated, will write with other fixes)`);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         warn(`Failed to fix test file ${testFile}: ${errorMessage}`);
+        
+        // If fix was rejected due to test removal, mark that we need stronger instructions
+        if (errorMessage.includes('Too many tests removed')) {
+          // Store a flag to strengthen instructions on next attempt
+          const fileData = currentTestFiles.get(testFile);
+          if (fileData) {
+            (fileData as { _testRemovalRejected?: boolean })._testRemovalRejected = true;
+            currentTestFiles.set(testFile, fileData);
+          }
+          // Mark as "working" so the loop continues to retry with stronger instructions
+          // We want to retry, not stop the loop
+          fixedAny = true; // This allows the loop to continue
+          warn(`Will retry fix with stronger instructions to prevent test removal`);
+        }
+      }
+    }
+    
+    // Write all validated fixes atomically (all at once, before tests run again)
+    // This ensures tests never run against incomplete/corrupted files
+    if (fixesToApply.length > 0) {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      
+      info(`Writing ${fixesToApply.length} validated fix(es) to disk...`);
+      for (const { testFile, formattedCode } of fixesToApply) {
+        try {
+          const fullPath = path.join(projectRoot, testFile);
+          const tempPath = fullPath + '.tmp';
+          
+          // Write to temp file first
+          await fs.writeFile(tempPath, formattedCode, 'utf-8');
+          
+          // Move to final location (atomic)
+          await fs.rename(tempPath, fullPath);
+          
+          debug(`✓ Wrote validated fix: ${testFile}`);
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          warn(`Failed to write fix for ${testFile}: ${errorMessage}`);
+        }
+      }
+      info(`All ${fixesToApply.length} fix(es) written to disk`);
+      
+      // Type check all fixed files before running tests again
+      // This ensures all type errors are fixed before tests run
+      if (fixesToApply.length > 0) {
+        info('Type checking all fixed files before running tests...');
+        const { validateTypeScript } = await import('../utils/file-validator.js');
+        const { readFileSync } = await import('fs');
+        const { join } = await import('path');
+        const { fixMissingImports } = await import('../utils/import-fixer.js');
+        
+        let typeErrorsFixed = true;
+        let typeCheckAttempts = 0;
+        const maxTypeCheckAttempts = 5; // Fewer attempts in fix loop
+        
+        while (typeErrorsFixed && typeCheckAttempts < maxTypeCheckAttempts) {
+          typeCheckAttempts++;
+          typeErrorsFixed = false;
+          const filesToFix: Array<{ path: string; missingImports?: string[] }> = [];
+          
+          // Type check all fixed files
+          for (const { testFile } of fixesToApply) {
+            const fullPath = join(projectRoot, testFile);
+            if (!existsSync(fullPath)) {
+              continue;
+            }
+            
+            const validation = await validateTypeScript(fullPath, projectRoot);
+            
+            if (!validation.valid && validation.errors.length > 0) {
+              // Check if these are type errors (not syntax errors - those should be caught earlier)
+              const typeErrors = validation.errors.filter((e: string) => 
+                !e.includes('Unclosed') && 
+                !e.includes('Syntax') && 
+                !e.includes('syntax') &&
+                !e.includes('brace') &&
+                !e.includes('parenthes') &&
+                !e.includes('bracket')
+              );
+              
+              if (typeErrors.length > 0 || validation.missingImports) {
+                filesToFix.push({
+                  path: testFile,
+                  missingImports: validation.missingImports,
+                });
+              }
+            }
+          }
+          
+          // Fix type errors in all files
+          if (filesToFix.length > 0) {
+            info(`Found type errors in ${filesToFix.length} file(s), fixing...`);
+            typeErrorsFixed = true;
+            
+            for (const { path: testPath, missingImports } of filesToFix) {
+              if (missingImports && missingImports.length > 0) {
+                const fullPath = join(projectRoot, testPath);
+                const content = readFileSync(fullPath, 'utf-8');
+                const isVitest = content.includes("from 'vitest'") || content.includes('from "vitest"');
+                const framework = isVitest ? 'vitest' : 'jest';
+                const fixedContent = fixMissingImports(content, missingImports, framework);
+                
+                // Write fixed content
+                const fs = await import('fs/promises');
+                const tempPath = fullPath + '.tmp';
+                await fs.writeFile(tempPath, fixedContent, 'utf-8');
+                await fs.rename(tempPath, fullPath);
+                
+                // Update in-memory test files
+                const fileData = currentTestFiles.get(testPath);
+                if (fileData) {
+                  fileData.content = fixedContent;
+                }
+                
+                info(`✓ Fixed type errors in ${testPath}`);
+              }
+            }
+          } else {
+            typeErrorsFixed = false;
+          }
+        }
+        
+        if (typeCheckAttempts >= maxTypeCheckAttempts && typeErrorsFixed) {
+          warn(`Type checking reached maximum attempts (${maxTypeCheckAttempts}). Proceeding with remaining type errors.`);
+        } else if (!typeErrorsFixed) {
+          debug('All fixed files pass type checking');
+        }
       }
     }
 
-    if (!fixedAny) {
+    // Only stop if we're not on the final attempt and no fixes were applied
+    // On final attempts, we should still try even if previous attempts failed
+    const isFinalAttempt = attempt + 1 >= maxFixAttempts;
+    if (!fixedAny && !isFinalAttempt) {
       warn('No fixes could be applied, stopping fix attempts');
       break;
+    } else if (!fixedAny && isFinalAttempt) {
+      // Final attempt - still try even if no fixes were applied in this iteration
+      // This allows us to attempt fixes even after reverts
+      warn('No fixes applied in this iteration, but continuing to final attempt');
+      fixedAny = true; // Force continue to final attempt
     }
 
     attempt++;
+    
+    // Add delay between fix attempts to avoid rate limits
+    // Use requestDelay from config, with minimum 1s to avoid hammering the API
+    if (attempt < maxFixAttempts && !isInfinite) {
+      const delay = Math.max(config.requestDelay || 1000, 1000);
+      if (delay > 0) {
+        // Waiting before next fix attempt to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
   }
 
   if (!isInfinite && attempt >= maxFixAttempts) {
-    warn(`Reached maximum fix attempts (${maxFixAttempts}), some tests may still be failing`);
+    const finalResults = await testRunner.runTests({
+      testFiles: testFilePaths,
+      framework,
+      packageManager,
+      projectRoot,
+      coverage: false,
+    });
+    const finalFailures = finalResults.reduce((sum, r) => sum + (r.success ? 0 : r.failed), 0);
+    
+    if (finalFailures > 0) {
+      error(`❌ Reached maximum fix attempts (${maxFixAttempts}) with ${finalFailures} test(s) still failing`);
+      error(`The final attempt should have made all tests pass. This indicates a critical issue.`);
+    } else {
+      info(`✓ Reached maximum fix attempts (${maxFixAttempts}) - all tests are now passing`);
+    }
   }
 
   return currentTestFiles;

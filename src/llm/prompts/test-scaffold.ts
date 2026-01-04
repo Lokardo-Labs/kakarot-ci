@@ -146,7 +146,7 @@ function buildUserPrompt(
   const importExample = framework === 'jest' 
     ? "import { describe, it } from 'jest';" 
     : "import { describe, it } from 'vitest';";
-  
+
   prompt += `Generate a minimal test scaffold with:\n`;
   if (importPath) {
     prompt += `- Import path: ${importPath} (use this exact path)\n`;
@@ -163,7 +163,7 @@ function buildUserPrompt(
     prompt += `- describe block for ${target.className} class\n`;
     prompt += `- Nested describe block for ${target.functionName} method\n`;
   } else {
-    prompt += `- describe block for ${target.functionName}\n`;
+  prompt += `- describe block for ${target.functionName}\n`;
   }
   prompt += `- it blocks with TODO comments for test cases (e.g., "it('should handle normal case', () => { // TODO: implement test });")\n`;
   prompt += `- No actual test implementations\n`;

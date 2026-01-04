@@ -167,10 +167,23 @@ export async function mergeTestFiles(
     return newCode;
   }
 
+  // Validate new code syntax before merging
+  const { checkSyntaxCompleteness } = await import('./file-validator.js');
+  const syntaxCheck = checkSyntaxCompleteness(newCode);
+  if (!syntaxCheck.valid) {
+    throw new Error(`Cannot merge: New test code has syntax errors: ${syntaxCheck.errors.join('; ')}`);
+  }
+
   const existing = parseTestFile(existingContent);
   const newImports = extractImports(newCode);
   const newDescribeBlocks = extractDescribeBlocks(newCode);
   const otherCode = extractOtherCode(newCode);
+  
+  // Validate that we successfully extracted describe blocks
+  // If newCode has describe blocks but extraction failed, the code might be malformed
+  if (newCode.includes('describe(') && newDescribeBlocks.size === 0) {
+    warn('Warning: New code contains describe() but extraction failed. Code may be incomplete.');
+  }
 
   // Merge imports - consolidate imports from the same source
   const allImportsList: string[] = [];
@@ -234,7 +247,25 @@ export async function mergeTestFiles(
     lines.push(''); // Blank line between describe blocks
   });
 
-  return lines.join('\n').trim() + '\n';
+  const mergedContent = lines.join('\n').trim() + '\n';
+  
+  // Validate merged content syntax
+  const mergedSyntaxCheck = checkSyntaxCompleteness(mergedContent);
+  if (!mergedSyntaxCheck.valid) {
+    warn(`Merged test file has syntax errors: ${mergedSyntaxCheck.errors.join('; ')}`);
+    // Try to recover by returning just the new code if existing content is causing issues
+    const existingSyntaxCheck = checkSyntaxCompleteness(existingContent);
+    if (!existingSyntaxCheck.valid) {
+      warn('Existing test file has syntax errors. Returning new code only.');
+      return newCode;
+    }
+    // If existing is valid but merged is not, the merge logic may have broken something
+    // Return existing + new (simple append) as fallback
+    warn('Merge created syntax errors. Using simple append fallback.');
+    return `${existingContent}\n\n${newCode}`;
+  }
+  
+  return mergedContent;
 }
 
 /**

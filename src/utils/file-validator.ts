@@ -148,17 +148,19 @@ export function checkSyntaxCompleteness(code: string): { valid: boolean; errors:
     errors.push(`Extra closing brackets: ${Math.abs(bracketDepth)} closing bracket(s) without opening`);
   }
   
-  // Check for incomplete statements at end
+  // Check for incomplete statements at end (file truncation)
   const trimmed = code.trim();
   if (trimmed.length > 0) {
     const lines = trimmed.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     // Get last meaningful line (skip closing braces/brackets)
     let lastMeaningfulLine = '';
+    let lastLineNumber = 0;
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i];
       // Skip lines that are just closing braces/brackets
       if (!line.match(/^[})\]]+[;,]?\s*$/)) {
         lastMeaningfulLine = line;
+        lastLineNumber = i + 1; // 1-indexed
         break;
       }
     }
@@ -170,19 +172,19 @@ export function checkSyntaxCompleteness(code: string): { valid: boolean; errors:
           !lastMeaningfulLine.endsWith(',') &&
           !lastMeaningfulLine.endsWith('++') &&
           !lastMeaningfulLine.endsWith('--')) {
-        errors.push('File ends with incomplete expression (operator without operand)');
+        errors.push(`File appears truncated at line ${lastLineNumber}: "${lastMeaningfulLine.substring(0, 50)}..." - expression ends with operator but no operand`);
       }
     
       // Check for incomplete function calls (has opening paren but no closing)
       const openParens = (lastMeaningfulLine.match(/\(/g) || []).length;
       const closeParens = (lastMeaningfulLine.match(/\)/g) || []).length;
       if (openParens > closeParens) {
-        errors.push('File ends with incomplete function call');
+        errors.push(`File appears truncated at line ${lastLineNumber}: "${lastMeaningfulLine.substring(0, 50)}..." - function call is incomplete (missing closing parenthesis)`);
       }
       
       // Check for incomplete property access (ends with dot)
       if (lastMeaningfulLine.endsWith('.')) {
-        errors.push('File ends with incomplete property access');
+        errors.push(`File appears truncated at line ${lastLineNumber}: "${lastMeaningfulLine.substring(0, 50)}..." - property access is incomplete (ends with dot)`);
       }
       
       // Check for incomplete assignments (ends with identifier after =)
@@ -191,7 +193,7 @@ export function checkSyntaxCompleteness(code: string): { valid: boolean; errors:
         const afterEquals = lastMeaningfulLine.split('=').pop()?.trim() || '';
         // If after = is just a word (not a function call, not a number, not a string)
         if (afterEquals.match(/^\w+\s*$/) && !afterEquals.match(/^(true|false|null|undefined)$/)) {
-          errors.push('File ends with incomplete expression');
+          errors.push(`File appears truncated at line ${lastLineNumber}: "${lastMeaningfulLine.substring(0, 50)}..." - assignment expression is incomplete`);
         }
       }
     }
@@ -206,7 +208,7 @@ export function checkSyntaxCompleteness(code: string): { valid: boolean; errors:
 /**
  * Validate file using TypeScript compiler (if available)
  */
-async function validateTypeScript(
+export async function validateTypeScript(
   filePath: string,
   projectRoot: string
 ): Promise<{ valid: boolean; errors: string[]; missingImports?: string[] }> {
@@ -299,14 +301,31 @@ async function validateTypeScript(
           }
         }
       } else {
-        // If TypeScript isn't available or other error, just warn
-        warn(`Could not run TypeScript validation: ${execErr instanceof Error ? execErr.message : String(execErr)}`);
-        return { valid: true, errors: [], missingImports: [] }; // Don't fail if TypeScript isn't available
+        // If TypeScript isn't available or other error, check if we can still validate
+        // Only allow validation to pass if we're certain TypeScript isn't installed
+        // Otherwise, treat as validation failure to be safe
+        const errorMsg = execErr instanceof Error ? execErr.message : String(execErr);
+        if (errorMsg.includes('command not found') || errorMsg.includes('ENOENT')) {
+          // TypeScript compiler not found - this is acceptable, just warn
+          warn(`TypeScript compiler not found. Skipping type validation. Install TypeScript to enable type checking.`);
+          return { valid: true, errors: [], missingImports: [] };
+        } else {
+          // Other error - could be a real validation issue, fail validation
+          warn(`TypeScript validation failed: ${errorMsg}`);
+          return { valid: false, errors: [`TypeScript validation error: ${errorMsg}`], missingImports: [] };
+        }
       }
     }
   } catch (err) {
-    warn(`Could not run TypeScript validation: ${err instanceof Error ? err.message : String(err)}`);
-    return { valid: true, errors: [], missingImports: [] };
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    // Only allow validation to pass if TypeScript isn't installed
+    if (errorMsg.includes('command not found') || errorMsg.includes('ENOENT')) {
+      warn(`TypeScript compiler not found. Skipping type validation.`);
+      return { valid: true, errors: [], missingImports: [] };
+    } else {
+      warn(`Could not run TypeScript validation: ${errorMsg}`);
+      return { valid: false, errors: [`TypeScript validation error: ${errorMsg}`], missingImports: [] };
+    }
   }
   
   return {

@@ -58,8 +58,10 @@ export function extractRelevantCode(
     
     for (const funcName of functionNames) {
       // Try to find the function definition
+      // Escape special regex characters in function name
+      const escapedFuncName = funcName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const funcRegex = new RegExp(
-        `(export\\s+)?(async\\s+)?(function\\s+${funcName}|const\\s+${funcName}\\s*=|${funcName}\\s*[:=]\\s*(async\\s+)?function|class\\s+${funcName})[\\s\\S]*?(?=\\n(export\\s+)?(async\\s+)?(function|const|class|interface|type|\\}|$)`,
+        `(export\\s+)?(async\\s+)?(function\\s+${escapedFuncName}|const\\s+${escapedFuncName}\\s*=|${escapedFuncName}\\s*[:=]\\s*(async\\s+)?function|class\\s+${escapedFuncName})[\\s\\S]*?(?=\\n(export\\s+)?(async\\s+)?(function|const|class|interface|type|\\}|$))`,
         'm'
       );
       

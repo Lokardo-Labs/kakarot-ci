@@ -77,5 +77,7 @@ export interface TestFixContext {
     stack?: string;
   }>;
   sourceFilePath?: string;
+  _validationErrors?: string[]; // Syntax errors with line numbers for better LLM guidance
+  _testRemovalRejected?: boolean; // Flag to indicate previous fix was rejected for removing too many tests
 }
 
