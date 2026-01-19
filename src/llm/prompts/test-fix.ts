@@ -55,14 +55,14 @@ function buildSystemPrompt(framework: 'jest' | 'vitest', attempt: number, maxAtt
   const isFinalAttempt = attempt >= maxAttempts;
   const attemptsRemaining = maxAttempts - attempt + 1;
 
-  let prompt = `You are an expert ${frameworkName} test fixer. Your job is to fix failing tests by correcting the test code, not the implementation.\n\n`;
+  let systemPrompt = `You are an expert ${frameworkName} test fixer. Your job is to fix failing tests by correcting the test code, not the implementation.\n\n`;
   
   // Add critical warning if previous fix was rejected for removing tests
   if (testRemovalRejected) {
-    prompt += `🚨🚨🚨 CRITICAL: Your previous fix attempt was REJECTED because it removed too many tests.\n`;
-    prompt += `🚨🚨🚨 YOU MUST NOT DELETE TESTS. If a test cannot be fixed, REPLACE IT WITH A MINIMAL PASSING TEST.\n`;
-    prompt += `🚨🚨🚨 Example minimal test: it('test name', () => { expect(functionName()).toBeDefined(); });\n`;
-    prompt += `🚨🚨🚨 You MUST preserve ALL tests - deleting tests will cause your fix to be REJECTED again.\n\n`;
+    systemPrompt += `🚨🚨🚨 CRITICAL: Your previous fix attempt was REJECTED because it removed too many tests.\n`;
+    systemPrompt += `🚨🚨🚨 YOU MUST NOT DELETE TESTS. If a test cannot be fixed, REPLACE IT WITH A MINIMAL PASSING TEST.\n`;
+    systemPrompt += `🚨🚨🚨 Example minimal test: it('test name', () => { expect(functionName()).toBeDefined(); });\n`;
+    systemPrompt += `🚨🚨🚨 You MUST preserve ALL tests - deleting tests will cause your fix to be REJECTED again.\n\n`;
   }
 
   let priorityMessage = '';
@@ -90,7 +90,7 @@ function buildSystemPrompt(framework: 'jest' | 'vitest', attempt: number, maxAtt
       `- Even a minimal test is better than no test - preserve coverage\n`;
   }
 
-  return `You are an expert ${frameworkName} test debugger. Your task is to fix failing unit tests.
+  systemPrompt += `You are an expert ${frameworkName} test debugger. Your task is to fix failing unit tests.
 
 🚨🚨🚨 CRITICAL SYNTAX REQUIREMENT - READ THIS FIRST 🚨🚨🚨
 YOUR CODE MUST BE SYNTAX-COMPLETE. INCOMPLETE CODE WILL BE REJECTED.
@@ -182,6 +182,8 @@ Output format:
 5. If ANY syntax is incomplete, DO NOT RETURN - fix it first
 
 INCOMPLETE CODE WILL BE REJECTED. ONLY RETURN SYNTAX-COMPLETE CODE.`;
+
+  return systemPrompt;
 }
 
 function buildUserPrompt(
@@ -236,8 +238,21 @@ function buildUserPrompt(
   // Add original function code with better formatting
   prompt += `Original function code:\n\`\`\`typescript\n${originalCode}\n\`\`\`\n\n`;
 
+  // CRITICAL: List failing tests FIRST and prominently
+  if (failingTests && failingTests.length > 0) {
+    prompt += `\n🚨🚨🚨 ONLY THESE ${failingTests.length} TEST(S) ARE FAILING - FIX ONLY THESE 🚨🚨🚨\n\n`;
+    prompt += `FAILING TESTS TO FIX:\n`;
+    for (let i = 0; i < failingTests.length; i++) {
+      const ft = failingTests[i];
+      prompt += `${i + 1}. "${ft.testName}"\n`;
+      prompt += `   Error: ${ft.message}\n`;
+    }
+    prompt += `\n⚠️ CRITICAL: Only these ${failingTests.length} test(s) above are failing. All other tests are PASSING.\n`;
+    prompt += `⚠️ You must ONLY fix the tests listed above. Do NOT modify, delete, or change any other tests.\n\n`;
+  }
+  
   // Add failing test code
-  prompt += `Failing test code:\n\`\`\`typescript\n${testCode}\n\`\`\`\n\n`;
+  prompt += `Complete test file (contains both passing and failing tests):\n\`\`\`typescript\n${testCode}\n\`\`\`\n\n`;
   
   // CRITICAL: Preserve all tests - make this VERY explicit
   const testCount = (testCode.match(/it\(/g) || []).length;
@@ -247,6 +262,10 @@ function buildUserPrompt(
   prompt += `\nThe test file above contains:\n`;
   prompt += `- ${describeCount} describe block(s)\n`;
   prompt += `- ${testCount} test(s) (it() calls)\n`;
+  if (failingTests && failingTests.length > 0) {
+    prompt += `- ${failingTests.length} FAILING test(s) (listed above - fix ONLY these)\n`;
+    prompt += `- ${testCount - failingTests.length} PASSING test(s) (do NOT modify these)\n`;
+  }
   prompt += `\nYOU MUST RETURN ALL ${testCount} TESTS IN THE SAME STRUCTURE. DO NOT DELETE ANY TESTS.\n\n`;
   
   // Add extra warning if previous fix was rejected for removing tests
@@ -257,15 +276,42 @@ function buildUserPrompt(
     prompt += `⚠️⚠️⚠️ The returned file MUST have exactly ${testCount} tests - no more, no less.\n\n`;
   }
   
-  prompt += `REQUIREMENTS:\n`;
+  prompt += `STEP-BY-STEP INSTRUCTIONS:\n`;
+  prompt += `\nSTEP 1: Identify the failing tests\n`;
+  if (failingTests && failingTests.length > 0) {
+    prompt += `- Look for these exact test names in the code above:\n`;
+    failingTests.forEach((ft, i) => {
+      prompt += `  ${i + 1}. "${ft.testName}"\n`;
+    });
+  } else {
+    prompt += `- Review the error messages below to identify which tests are failing\n`;
+  }
+  prompt += `\nSTEP 2: Fix ONLY the failing tests\n`;
+  prompt += `- Find each failing test in the code above\n`;
+  prompt += `- Fix the test logic/expectations to make it pass\n`;
+  prompt += `- DO NOT delete the test - fix it or replace with a minimal passing test\n`;
+  prompt += `\nSTEP 3: Leave ALL other tests unchanged\n`;
+  prompt += `- Copy ALL passing tests exactly as they are\n`;
+  prompt += `- Do NOT modify, simplify, or delete any passing tests\n`;
+  prompt += `- Preserve the exact structure, formatting, and content of passing tests\n`;
+  prompt += `\nSTEP 4: Verify your output\n`;
+  prompt += `- Count your tests: must be exactly ${testCount} tests (same as input)\n`;
+  prompt += `- Count your describe blocks: must be exactly ${describeCount} blocks\n`;
+  prompt += `- Verify all ${failingTests?.length || 0} failing tests are fixed\n`;
+  prompt += `- Verify all ${testCount - (failingTests?.length || 0)} passing tests are unchanged\n`;
+  prompt += `\nREQUIREMENTS:\n`;
   prompt += `1. Count the tests in the file above - there are ${testCount} tests\n`;
   prompt += `2. Return the COMPLETE file with ALL ${testCount} tests preserved\n`;
   prompt += `3. Preserve the EXACT describe block structure - keep tests in their original describe blocks\n`;
-  prompt += `4. Only fix the FAILING tests listed in the error messages above\n`;
+  if (failingTests && failingTests.length > 0) {
+    prompt += `4. Fix ONLY these ${failingTests.length} failing test(s): ${failingTests.map(ft => `"${ft.testName}"`).join(', ')}\n`;
+  } else {
+    prompt += `4. Only fix the FAILING tests listed in the error messages\n`;
+  }
   prompt += `5. Keep ALL passing tests exactly as they are - DO NOT modify them\n`;
   prompt += `6. Keep ALL describe blocks with their original names - DO NOT rename or remove describe() blocks\n`;
   prompt += `7. Keep tests in their correct describe blocks - DO NOT move tests between describe blocks\n`;
-  prompt += `8. If a test is not in the "Failing test cases" list above, it is PASSING - keep it unchanged\n`;
+  prompt += `8. If a test is not in the failing tests list above, it is PASSING - keep it unchanged\n`;
   prompt += `9. DO NOT simplify, remove, or delete any tests\n`;
   prompt += `10. DO NOT reorganize or restructure the test file\n`;
   prompt += `11. If a test truly cannot be fixed, REPLACE IT WITH A MINIMAL PASSING TEST\n`;
@@ -274,13 +320,14 @@ function buildUserPrompt(
   prompt += `14. If you return fewer tests or different structure, your code will be REJECTED\n`;
   prompt += `15. NEVER delete tests - if you can't fix it, replace with a minimal passing test\n\n`;
 
-  // Add detailed error information
+  // Add detailed error information (already shown at top, but include here for reference)
   if (failingTests && failingTests.length > 0) {
-    prompt += `Failing test cases:\n`;
+    prompt += `\nDetailed error information for failing tests:\n`;
     for (const failingTest of failingTests) {
-      prompt += `- ${failingTest.testName}: ${failingTest.message}\n`;
+      prompt += `\nTest: "${failingTest.testName}"\n`;
+      prompt += `Error: ${failingTest.message}\n`;
       if (failingTest.stack) {
-        prompt += `  Stack: ${failingTest.stack.split('\n')[0]}\n`;
+        prompt += `Stack: ${failingTest.stack.split('\n')[0]}\n`;
       }
     }
     prompt += '\n';
@@ -351,12 +398,18 @@ function buildUserPrompt(
   prompt += `- [ ] Count your returned tests - must be ${testCount} tests (same as input)\n`;
   prompt += `- [ ] Include ALL ${describeCount} describe blocks from the original file\n`;
   prompt += `- [ ] Include ALL ${testCount} it() tests from the original file\n`;
-  prompt += `- [ ] Only modified tests that are actually failing (listed in error messages)\n`;
-  prompt += `- [ ] All other tests are unchanged\n`;
+  if (failingTests && failingTests.length > 0) {
+    prompt += `- [ ] Fixed ONLY these ${failingTests.length} failing test(s): ${failingTests.map(ft => `"${ft.testName}"`).join(', ')}\n`;
+    prompt += `- [ ] Left ALL ${testCount - failingTests.length} passing test(s) completely unchanged\n`;
+  } else {
+    prompt += `- [ ] Only modified tests that are actually failing (listed in error messages)\n`;
+    prompt += `- [ ] All other tests are unchanged\n`;
+  }
   prompt += `- [ ] No tests were deleted - if you can't fix a test, replace it with a minimal passing test\n`;
   prompt += `- [ ] Minimal test format: it('test name', () => { expect(function()).toBeDefined(); });\n`;
   prompt += `\nIf your returned code has fewer than ${testCount} tests, it will be REJECTED.\n`;
   prompt += `If a test can't be fixed, replace it with a minimal passing test - NEVER delete it.\n`;
+  prompt += `\nRemember: You are fixing ONLY the failing tests. All passing tests must remain EXACTLY as they are.\n`;
   prompt += `Return ONLY the corrected test code, no explanations or markdown.`;
 
   return prompt;

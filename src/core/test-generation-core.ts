@@ -342,6 +342,27 @@ export async function generateTestsFromTargets(
   let coverageAttempted = false; // Track if coverage was actually attempted (passed to runTests)
   let testResults: TestResult[] | undefined = undefined;
 
+  // Ensure existing test files are included in testFiles map for fix loop
+  // This allows the fix loop to run on existing test files even when all targets are skipped
+  const existingTestFiles = new Set<string>();
+  for (const target of limitedTargets) {
+    const testFilePath = getTestFilePath(target, config);
+    const fullTestPath = join(projectRoot, testFilePath);
+    if (existsSync(fullTestPath) && !testFiles.has(testFilePath)) {
+      existingTestFiles.add(testFilePath);
+      // Read existing test file and add to testFiles map so fix loop can run on it
+      const existingContent = readFileSync(fullTestPath, 'utf-8');
+      testFiles.set(testFilePath, { content: existingContent, targets: [] });
+      // Also add to testFileToTargetsMap for fix loop context
+      if (!testFileToTargetsMap[testFilePath]) {
+        testFileToTargetsMap[testFilePath] = [];
+      }
+    }
+  }
+  if (existingTestFiles.size > 0) {
+    debug(`Including ${existingTestFiles.size} existing test file(s) in fix loop: ${Array.from(existingTestFiles).join(', ')}`);
+  }
+
   if (testFiles.size > 0) {
     // Write test files to disk with validation
     const { writtenPaths, failedPaths } = await writeTestFiles(testFiles, projectRoot, privatePropertiesMap);
