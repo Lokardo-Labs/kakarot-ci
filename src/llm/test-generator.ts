@@ -15,7 +15,7 @@ import { info, warn, error, debug } from '../utils/logger.js';
 export class TestGenerator {
   private provider: ReturnType<typeof createLLMProvider>;
   private fixProvider: ReturnType<typeof createLLMProvider> | null;
-  private config: Pick<KakarotConfig, 'maxFixAttempts' | 'temperature' | 'fixTemperature' | 'customPrompts' | 'model' | 'fixModel'>;
+  private config: Pick<KakarotConfig, 'maxFixAttempts' | 'temperature' | 'fixTemperature' | 'customPrompts' | 'model' | 'fixModel' | 'maxTokens'>;
   private modelContextLimit: number;
   private fixModelContextLimit: number;
 
@@ -41,6 +41,7 @@ export class TestGenerator {
       customPrompts: config.customPrompts,
       model: config.model,
       fixModel: config.fixModel,
+      maxTokens: config.maxTokens,
     };
     // Get model context limit (default to 8K for gpt-4, 128K for newer models)
     this.modelContextLimit = this.getModelContextLimit(config.model);
@@ -78,8 +79,8 @@ export class TestGenerator {
     if (model.includes('claude-2')) {
       return 100000;
     }
-    if (model.includes('gemini-pro') || model.includes('gemini-1.5')) {
-      return 1000000; // Gemini has very large context
+    if (model.includes('gemini')) {
+      return 1000000; // Gemini models have very large context (1M+ tokens)
     }
     
     return 8000; // Default fallback
@@ -97,10 +98,27 @@ export class TestGenerator {
       const messages = buildTestGenerationPrompt(context);
       debug(`Sending test generation request to LLM for ${target.functionName}`);
 
+      // Use config maxTokens if set, otherwise estimate based on function complexity
+      const codeLength = target.code?.length ?? 0;
+      const estimatedOutputTokens = Math.floor(Math.max(4000, Math.min(16000, codeLength / 2)));
+      const maxTokens = this.config.maxTokens ?? estimatedOutputTokens;
+      
       const response = await this.provider.generate(messages, {
         temperature: this.config.temperature ?? 0.2, // Lower temperature for more consistent test generation
-        maxTokens: 4000,
+        maxTokens,
       });
+
+      // Check for truncation
+      if (response.truncated) {
+        const tokenInfo = response.usage?.completionTokens 
+          ? ` (${response.usage.completionTokens} tokens generated)`
+          : '';
+        throw new Error(
+          `Response truncated for ${target.functionName}${tokenInfo}. ` +
+          `The LLM hit the token limit (finishReason: ${response.finishReason}). ` +
+          `Try increasing maxTokens or simplifying the function.`
+        );
+      }
 
       const testCode = parseTestCode(response.content);
       const validation = validateTestCodeStructure(testCode, framework);
@@ -177,7 +195,7 @@ export class TestGenerator {
       // A 1300-line file needs ~15K-20K tokens output capacity
       // Claude models support up to 8K-16K output, GPT-4 supports up to 16K
       const estimatedOutputTokens = Math.max(8000, context.testCode.length / 3); // ~3 chars per token
-      const maxOutputTokens = Math.min(estimatedOutputTokens, 16000); // Cap at 16K
+      const maxOutputTokens = Math.floor(Math.min(estimatedOutputTokens, 16000)); // Cap at 16K, must be integer
       
       debug(`Fix attempt ${attempt}: estimated ${Math.round(estimatedOutputTokens)} output tokens needed, using ${maxOutputTokens}`);
       
@@ -185,6 +203,18 @@ export class TestGenerator {
         temperature: this.config.fixTemperature ?? 0.1, // Very low temperature for fix attempts
         maxTokens: maxOutputTokens,
       });
+
+      // Check for truncation during fix
+      if (response.truncated) {
+        const tokenInfo = response.usage?.completionTokens 
+          ? ` (${response.usage.completionTokens} tokens generated)`
+          : '';
+        throw new Error(
+          `Fix response truncated (attempt ${attempt})${tokenInfo}. ` +
+          `The LLM hit the token limit (finishReason: ${response.finishReason}). ` +
+          `Try increasing maxTokens or splitting the test file.`
+        );
+      }
 
       const fixedCode = parseTestCode(response.content);
       const validation = validateTestCodeStructure(fixedCode, framework);

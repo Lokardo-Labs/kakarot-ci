@@ -210,6 +210,11 @@ export class OpenAIProvider extends BaseLLMProvider {
       }
 
       const content = data.choices[0]?.message?.content ?? '';
+      const finishReason = data.choices[0]?.finish_reason;
+      
+      // OpenAI uses 'stop', 'length', 'content_filter', 'tool_calls', etc.
+      const truncated = finishReason === 'length';
+      
       const usage = data.usage
         ? {
             promptTokens: data.usage.prompt_tokens,
@@ -219,9 +224,15 @@ export class OpenAIProvider extends BaseLLMProvider {
         : undefined;
 
       this.logUsage(usage, 'OpenAI');
+      
+      if (truncated) {
+        warn(`Response truncated (finish_reason: ${finishReason}). Output may be incomplete.`);
+      }
 
       return {
         content,
+        finishReason,
+        truncated,
         usage,
       };
   }

@@ -10,6 +10,10 @@ import { generateTestsFromTargets } from './test-generation-core.js';
 
 export interface LocalContext {
   mode: 'scaffold' | 'full';
+  /** CLI override for includePatterns */
+  includePatterns?: string[];
+  /** CLI override for excludePatterns */
+  excludePatterns?: string[];
 }
 
 export interface TestGenerationSummary {
@@ -33,6 +37,14 @@ export interface TestGenerationSummary {
  */
 export async function runLocal(context: LocalContext): Promise<TestGenerationSummary> {
   const config = await loadConfig();
+  
+  // Apply CLI overrides for include/exclude patterns
+  if (context.includePatterns && context.includePatterns.length > 0) {
+    config.includePatterns = context.includePatterns;
+  }
+  if (context.excludePatterns && context.excludePatterns.length > 0) {
+    config.excludePatterns = context.excludePatterns;
+  }
   
   // Initialize logger
   initLogger(config);

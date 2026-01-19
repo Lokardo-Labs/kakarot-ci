@@ -9,6 +9,10 @@ export interface LLMMessage {
 
 export interface LLMResponse {
   content: string;
+  /** Reason the model stopped generating. 'stop' means complete, 'length'/'max_tokens' means truncated */
+  finishReason?: 'stop' | 'length' | 'max_tokens' | 'safety' | 'error' | string;
+  /** True if response was truncated due to token limits */
+  truncated?: boolean;
   usage?: {
     promptTokens?: number;
     completionTokens?: number;

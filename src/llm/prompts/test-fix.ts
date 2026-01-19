@@ -250,7 +250,7 @@ function buildUserPrompt(
     prompt += `\n⚠️ CRITICAL: Only these ${failingTests.length} test(s) above are failing. All other tests are PASSING.\n`;
     prompt += `⚠️ You must ONLY fix the tests listed above. Do NOT modify, delete, or change any other tests.\n\n`;
   }
-  
+
   // Add failing test code
   prompt += `Complete test file (contains both passing and failing tests):\n\`\`\`typescript\n${testCode}\n\`\`\`\n\n`;
   

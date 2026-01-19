@@ -14,12 +14,54 @@ import { readCoverageReport } from '../utils/coverage-reader.js';
 import type { CoverageDelta } from '../types/coverage.js';
 import { formatGeneratedCode, lintGeneratedCode } from '../utils/code-standards.js';
 import { findProjectRoot } from '../utils/config-loader.js';
-import { checkSyntaxCompleteness } from '../utils/file-validator.js';
+import { checkSyntaxCompleteness, validateTestFile, validateTypeScript } from '../utils/file-validator.js';
 import { readFileSync, existsSync } from 'fs';
+import * as fs from 'fs/promises';
 import { join } from 'path';
 import { info, error, warn, success, progress, debug } from '../utils/logger.js';
 import type { TestResult } from '../types/test-runner.js';
 import type { CoverageReport } from '../types/coverage.js';
+import { mergeTestFiles, hasExistingTests } from '../utils/test-file-merger.js';
+import { fixMissingImports } from '../utils/import-fixer.js';
+import { consolidateImports } from '../utils/import-consolidator.js';
+import { fixTypeErrors } from '../utils/type-error-fixer.js';
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/** Estimated tokens needed per test generation request */
+const ESTIMATED_TOKENS_PER_REQUEST = 3000;
+
+/** Maximum tokens per minute (OpenAI default, adjust per provider if needed) */
+const MAX_TOKENS_PER_MINUTE = 30000;
+
+/** Maximum wait time for token refill before proceeding (1 minute) */
+const MAX_TOKEN_WAIT_MS = 60000;
+
+/** Minimum test retention percentage - reject fixes that remove more than this */
+const MIN_TEST_RETENTION_PERCENT = 0.95;
+
+/** Minimum test count before applying retention threshold */
+const MIN_TESTS_FOR_RETENTION_CHECK = 10;
+
+/** Maximum type check attempts during initial validation */
+const MAX_TYPE_CHECK_ATTEMPTS_INITIAL = 10;
+
+/** Maximum type check attempts during fix loop */
+const MAX_TYPE_CHECK_ATTEMPTS_FIX_LOOP = 5;
+
+/** Maximum syntax error attempts before reverting to last valid version */
+const MAX_SYNTAX_ERROR_ATTEMPTS = 3;
+
+/** Maximum network retries on final fix attempt */
+const MAX_NETWORK_RETRIES_FINAL = 5;
+
+/** Maximum network retries on non-final attempts */
+const MAX_NETWORK_RETRIES_NORMAL = 3;
+
+/** Maximum backoff delay for network retries (10 seconds) */
+const MAX_NETWORK_BACKOFF_MS = 10000;
 
 export interface TestGenerationOptions {
   targets: TestTarget[];
@@ -72,14 +114,15 @@ export async function generateTestsFromTargets(
     };
   }
 
-  // Limit targets based on config
-  const limitedTargets = targets.slice(0, config.maxTestsPerPR);
+  // Limit targets based on config (-1 means unlimited)
+  const isUnlimited = config.maxTestsPerPR === -1;
+  const limitedTargets = isUnlimited ? targets : targets.slice(0, config.maxTestsPerPR);
   
-  if (targets.length > limitedTargets.length) {
+  if (!isUnlimited && targets.length > limitedTargets.length) {
     warn(`Limited to ${limitedTargets.length} target(s) (maxTestsPerPR: ${config.maxTestsPerPR})`);
   }
 
-  info(`Processing ${limitedTargets.length} test target(s)${targets.length > limitedTargets.length ? ` (limited from ${targets.length} total)` : ''}`);
+  info(`Processing ${limitedTargets.length} test target(s)${!isUnlimited && targets.length > limitedTargets.length ? ` (limited from ${targets.length} total)` : ''}`);
   
   // Log which functions/classes will be tested
   if (limitedTargets.length > 0) {
@@ -114,13 +157,13 @@ export async function generateTestsFromTargets(
 
     // Check token capacity before starting new function generation
     // Estimate tokens needed for this request (~2000-4000 tokens for test generation)
-    const estimatedTokensNeeded = 3000; // Conservative estimate
+    const estimatedTokensNeeded = ESTIMATED_TOKENS_PER_REQUEST;
     if (lastRateLimitInfo) {
       const timeSinceLastCheck = (Date.now() - lastRateLimitInfo.timestamp) / 1000 / 60; // minutes
       const tokensRefilled = timeSinceLastCheck * lastRateLimitInfo.refillRate;
       const currentAvailableTokens = Math.min(
         lastRateLimitInfo.availableTokens + tokensRefilled,
-        30000 // OpenAI TPM limit (adjust per provider if needed)
+        MAX_TOKENS_PER_MINUTE
       );
       
       if (currentAvailableTokens < estimatedTokensNeeded) {
@@ -129,14 +172,14 @@ export async function generateTestsFromTargets(
         const waitMinutes = tokensNeeded / lastRateLimitInfo.refillRate;
         const waitMs = Math.ceil(waitMinutes * 60 * 1000);
         
-        if (waitMs > 0 && waitMs < 60000) { // Only wait if less than 1 minute
+        if (waitMs > 0 && waitMs < MAX_TOKEN_WAIT_MS) {
           warn(`Insufficient token capacity (${Math.floor(currentAvailableTokens)} available, ${estimatedTokensNeeded} needed). Waiting ${Math.ceil(waitMs / 1000)}s for token refill...`);
           await new Promise(resolve => setTimeout(resolve, waitMs));
           // Update available tokens after waiting
           const newTimeSinceCheck = (Date.now() - lastRateLimitInfo.timestamp) / 1000 / 60;
           lastRateLimitInfo.availableTokens = Math.min(
             lastRateLimitInfo.availableTokens + (newTimeSinceCheck * lastRateLimitInfo.refillRate),
-            30000
+            MAX_TOKENS_PER_MINUTE
           );
           lastRateLimitInfo.timestamp = Date.now();
         }
@@ -172,7 +215,6 @@ export async function generateTestsFromTargets(
       
       // Check if this function/class already has tests
       if (existingContent) {
-        const { hasExistingTests } = await import('../utils/test-file-merger.js');
         if (hasExistingTests(existingContent, target.functionName, target.className)) {
           info(`Skipping ${target.functionName} - tests already exist in ${testFilePath}`);
           continue; // Skip this target
@@ -227,7 +269,6 @@ export async function generateTestsFromTargets(
         const baseContent = existingContent || '';
         if (baseContent) {
           // Merge with existing file
-          const { mergeTestFiles } = await import('../utils/test-file-merger.js');
           fileData = { content: await mergeTestFiles(baseContent, formattedCode), targets: [] };
         } else {
         fileData = { content: formattedCode, targets: [] };
@@ -236,7 +277,6 @@ export async function generateTestsFromTargets(
         testFileToTargetsMap[testFilePath] = [];
       } else {
         // Merge new code with accumulated content
-        const { mergeTestFiles } = await import('../utils/test-file-merger.js');
         const mergedContent = await mergeTestFiles(fileData.content, formattedCode);
         
         // Validate merged content before storing (basic syntax check)
@@ -284,11 +324,18 @@ export async function generateTestsFromTargets(
                            !errorMessage.toLowerCase().includes('rate limit')) ||
                           errorMessage.toLowerCase().includes('billing');
       
-      const isConfigurationError = errorMessage.includes('400') || 
+      // Syntax errors from LLM output are NOT configuration errors - they're just bad generations
+      const isSyntaxError = errorMessage.includes('syntax error') || 
+                           errorMessage.includes('Cannot merge') ||
+                           errorMessage.includes('Unclosed') ||
+                           errorMessage.includes('truncated');
+      
+      const isConfigurationError = !isSyntaxError && (
+                                   errorMessage.includes('400') || 
                                    errorMessage.includes('401') ||
                                    errorMessage.includes('Unsupported parameter') ||
                                    errorMessage.includes('max_tokens') ||
-                                   errorMessage.includes('max_completion_tokens');
+                                   errorMessage.includes('max_completion_tokens'));
       
       if (isQuotaError) {
         // Quota errors won't resolve by retrying - fail fast
@@ -319,10 +366,12 @@ export async function generateTestsFromTargets(
       testsFailed++;
       
       // If we've seen the same configuration error 2+ times, fail fast
-      if (errors.length >= 2) {
+      // But NOT for syntax errors - those are expected when LLM generates bad code
+      if (errors.length >= 2 && !isSyntaxError) {
         const recentErrors = errors.slice(-2).map(e => e.error);
         const allSameConfigError = recentErrors.every(e => 
-          e.includes('400') || e.includes('401') || e.includes('Unsupported parameter')
+          (e.includes('400') || e.includes('401') || e.includes('Unsupported parameter')) &&
+          !e.includes('syntax error') && !e.includes('Cannot merge') && !e.includes('Unclosed')
         );
         if (allSameConfigError) {
           error(`Multiple configuration errors detected. Stopping generation to avoid wasting API calls.`);
@@ -390,14 +439,10 @@ export async function generateTestsFromTargets(
     // Type check all written test files and fix type errors before running tests
     if (writtenPaths.length > 0 && mode !== 'scaffold') {
       info('Type checking all test files before running tests...');
-      const { validateTypeScript } = await import('../utils/file-validator.js');
-      const { readFileSync } = await import('fs');
-      const { join } = await import('path');
-      const { fixMissingImports } = await import('../utils/import-fixer.js');
       
       let typeErrorsFixed = true;
       let typeCheckAttempts = 0;
-      const maxTypeCheckAttempts = 10;
+      const maxTypeCheckAttempts = MAX_TYPE_CHECK_ATTEMPTS_INITIAL;
       
       while (typeErrorsFixed && typeCheckAttempts < maxTypeCheckAttempts) {
         typeCheckAttempts++;
@@ -439,7 +484,6 @@ export async function generateTestsFromTargets(
           info(`Found type errors in ${filesWithErrors.length} file(s), fixing...`);
           typeErrorsFixed = true;
           
-          const { fixTypeErrors } = await import('../utils/type-error-fixer.js');
           
           for (const { path: testPath, missingImports, errors } of filesWithErrors) {
             const fullPath = join(projectRoot, testPath);
@@ -470,7 +514,6 @@ export async function generateTestsFromTargets(
             
             if (fixed) {
               // Write fixed content
-              const fs = await import('fs/promises');
               const tempPath = fullPath + '.tmp';
               await fs.writeFile(tempPath, content, 'utf-8');
               await fs.rename(tempPath, fullPath);
@@ -564,9 +607,6 @@ export async function generateTestsFromTargets(
         }
       } else {
         // Coverage was attempted but not generated - check if it's a setup issue
-        const { existsSync } = await import('fs');
-        const { join } = await import('path');
-        const { readFileSync } = await import('fs');
         const coverageDir = join(projectRoot, 'coverage');
         const coverageFile = join(projectRoot, 'coverage', 'coverage-final.json');
         
@@ -755,7 +795,7 @@ async function runTestsAndFix(
         
         // Revert after 3 syntax error attempts if we have a valid version to revert to
         // This prevents infinite loops with broken code
-        if (syntaxErrorAttempts >= 3 && lastValidContent && lastValidContent !== currentContent) {
+        if (syntaxErrorAttempts >= MAX_SYNTAX_ERROR_ATTEMPTS && lastValidContent && lastValidContent !== currentContent) {
           warn(`Too many syntax error attempts (${syntaxErrorAttempts}) for ${testFile}, reverting to last valid version`);
           if (lastValidContent && lastValidContent !== currentContent) {
             currentTestFiles.set(testFile, {
@@ -815,7 +855,7 @@ async function runTestsAndFix(
         const isFinalAttempt = attempt + 1 >= maxFixAttempts;
         let fixedResult;
         let retryCount = 0;
-        const maxNetworkRetries = isFinalAttempt ? 5 : 3; // More retries on final attempt, but retry on all attempts
+        const maxNetworkRetries = isFinalAttempt ? MAX_NETWORK_RETRIES_FINAL : MAX_NETWORK_RETRIES_NORMAL;
         
         while (retryCount <= maxNetworkRetries) {
           try {
@@ -848,7 +888,7 @@ async function runTestsAndFix(
             
             if (isNetworkError && retryCount < maxNetworkRetries) {
               retryCount++;
-              const backoffDelay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000); // Exponential backoff, max 10s
+              const backoffDelay = Math.min(1000 * Math.pow(2, retryCount - 1), MAX_NETWORK_BACKOFF_MS);
               const attemptLabel = isFinalAttempt ? 'final attempt' : `attempt ${attempt + 1}`;
               warn(`Network error on ${attemptLabel} (retry ${retryCount}/${maxNetworkRetries}): ${errorMessage}`);
               warn(`Retrying in ${Math.ceil(backoffDelay / 1000)}s...`);
@@ -886,7 +926,7 @@ async function runTestsAndFix(
         
         // Reject fixes that remove too many tests (more than 5% loss is suspicious)
         // This prevents the LLM from deleting tests when it should be fixing them
-        if (originalTestCount > 10 && fixedTestCount < originalTestCount * 0.95) {
+        if (originalTestCount > MIN_TESTS_FOR_RETENTION_CHECK && fixedTestCount < originalTestCount * MIN_TEST_RETENTION_PERCENT) {
           const testLoss = originalTestCount - fixedTestCount;
           const lossPercent = ((testLoss / originalTestCount) * 100).toFixed(1);
           warn(`⚠️ REJECTING FIX: Fixed test file has ${fixedTestCount} tests (down from ${originalTestCount}, ${lossPercent}% loss). Too many tests removed.`);
@@ -903,7 +943,6 @@ async function runTestsAndFix(
           // If formatting was disabled, still try import consolidation
           // Even if formatting is disabled, try to consolidate imports to prevent duplicates
           try {
-            const { consolidateImports } = await import('../utils/import-consolidator.js');
             const importRegex = /^import\s+.*?from\s+['"].*?['"];?$/gm;
             const imports = formattedCode.match(importRegex) || [];
             if (imports.length > 0) {
@@ -927,12 +966,10 @@ async function runTestsAndFix(
           .filter((v, i, a) => a.indexOf(v) === i); // Unique
 
         // Validate fixed file before writing (CRITICAL: validation happens BEFORE writing)
-        const { validateTestFile } = await import('../utils/file-validator.js');
         let validation = await validateTestFile(testFile, formattedCode, projectRoot, privateProperties);
         
         // If missing imports detected, fix them automatically
         if (validation.missingImports && validation.missingImports.length > 0) {
-          const { fixMissingImports } = await import('../utils/import-fixer.js');
           formattedCode = fixMissingImports(formattedCode, validation.missingImports, framework);
           // Re-validate after fixing imports
           validation = await validateTestFile(testFile, formattedCode, projectRoot, privateProperties);
@@ -986,19 +1023,17 @@ async function runTestsAndFix(
             
             // After 3 syntax error attempts, revert to last valid version if available
             // Check if we have a different valid version to revert to (not the same as current failed attempt)
-            if (syntaxErrorAttemptsForFile >= 3 && lastValidContent && fileDataWithErrors) {
+            if (syntaxErrorAttemptsForFile >= MAX_SYNTAX_ERROR_ATTEMPTS && lastValidContent && fileDataWithErrors) {
               // Only revert if the last valid content is different from what we just tried (formattedCode)
               // This ensures we're reverting to a truly different version
               if (lastValidContent !== formattedCode) {
                 warn(`Too many syntax error attempts (${syntaxErrorAttemptsForFile}) for ${testFile}, reverting to last valid version`);
-                currentTestFiles.set(testFile, {
+        currentTestFiles.set(testFile, {
                   content: lastValidContent,
                   targets: fileDataWithErrors.targets,
-                });
+        });
                 // Revert file on disk
-                const fs = await import('fs/promises');
-                const path = await import('path');
-                const fullPath = path.join(projectRoot, testFile);
+        const fullPath = join(projectRoot, testFile);
                 await fs.writeFile(fullPath, lastValidContent, 'utf-8');
                 info(`Reverted ${testFile} to last valid version`);
                 // Mark that we made a change (revert) so the loop continues
@@ -1092,13 +1127,10 @@ async function runTestsAndFix(
     // Write all validated fixes atomically (all at once, before tests run again)
     // This ensures tests never run against incomplete/corrupted files
     if (fixesToApply.length > 0) {
-      const fs = await import('fs/promises');
-      const path = await import('path');
-      
       info(`Writing ${fixesToApply.length} validated fix(es) to disk...`);
       for (const { testFile, formattedCode } of fixesToApply) {
         try {
-          const fullPath = path.join(projectRoot, testFile);
+          const fullPath = join(projectRoot, testFile);
           const tempPath = fullPath + '.tmp';
           
           // Write to temp file first
@@ -1119,14 +1151,10 @@ async function runTestsAndFix(
       // This ensures all type errors are fixed before tests run
       if (fixesToApply.length > 0) {
         info('Type checking all fixed files before running tests...');
-        const { validateTypeScript } = await import('../utils/file-validator.js');
-        const { readFileSync } = await import('fs');
-        const { join } = await import('path');
-        const { fixMissingImports } = await import('../utils/import-fixer.js');
         
         let typeErrorsFixed = true;
         let typeCheckAttempts = 0;
-        const maxTypeCheckAttempts = 5; // Fewer attempts in fix loop
+        const maxTypeCheckAttempts = MAX_TYPE_CHECK_ATTEMPTS_FIX_LOOP;
         
         while (typeErrorsFixed && typeCheckAttempts < maxTypeCheckAttempts) {
           typeCheckAttempts++;
@@ -1176,7 +1204,6 @@ async function runTestsAndFix(
                 const fixedContent = fixMissingImports(content, missingImports, framework);
                 
                 // Write fixed content
-                const fs = await import('fs/promises');
                 const tempPath = fullPath + '.tmp';
                 await fs.writeFile(tempPath, fixedContent, 'utf-8');
                 await fs.rename(tempPath, fullPath);
