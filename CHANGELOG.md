@@ -1,3 +1,10 @@
+## [0.11.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.11.0...v0.11.1) (2026-01-19)
+
+
+### Bug Fixes
+
+* **prompts:** Adding prompt fixes ([#43](https://github.com/Lokardo-Labs/kakarot-ci/issues/43)) ([4d124c9](https://github.com/Lokardo-Labs/kakarot-ci/commit/4d124c9185be63aee04d8f95f2a5b39604a40419))
+
 # [0.11.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.10.6...v0.11.0) (2026-01-04)
 
 
