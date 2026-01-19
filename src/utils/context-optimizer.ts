@@ -194,17 +194,18 @@ export function optimizeFixContext(
   const errorMaxChars = 500; // Error messages
   const codeMaxChars = Math.floor((maxChars - errorMaxChars - 500) / 2); // Split between original and test code
   
+  // CRITICAL: For the fix loop, we MUST send the COMPLETE test file
+  // The model needs to see ALL tests to return ALL tests
+  // Only truncate the original source code, never the test file
   const optimized: OptimizedFixContext = {
     originalCode: extractRelevantCode(
       context.originalCode,
       context.functionNames || [],
       codeMaxChars
     ),
-    testCode: extractFailingTests(
-      context.testCode,
-      context.failingTests?.map(f => f.testName) || [],
-      codeMaxChars
-    ),
+    // ALWAYS send the complete test file - the model needs to return the complete file
+    // If we only send failing tests, the model will only return failing tests
+    testCode: context.testCode,
     errorMessage: extractKeyErrorMessage(context.errorMessage, errorMaxChars),
   };
   

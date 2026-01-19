@@ -173,9 +173,17 @@ export class TestGenerator {
       const modelName = this.config.fixModel || this.config.model || 'default';
       debug(`Sending test fix request to LLM (attempt ${attempt}, model: ${modelName}, limit: ${contextLimit} tokens)`);
 
+      // Calculate max tokens based on input file size
+      // A 1300-line file needs ~15K-20K tokens output capacity
+      // Claude models support up to 8K-16K output, GPT-4 supports up to 16K
+      const estimatedOutputTokens = Math.max(8000, context.testCode.length / 3); // ~3 chars per token
+      const maxOutputTokens = Math.min(estimatedOutputTokens, 16000); // Cap at 16K
+      
+      debug(`Fix attempt ${attempt}: estimated ${Math.round(estimatedOutputTokens)} output tokens needed, using ${maxOutputTokens}`);
+      
       const response = await provider.generate(messages, {
         temperature: this.config.fixTemperature ?? 0.1, // Very low temperature for fix attempts
-        maxTokens: 4000,
+        maxTokens: maxOutputTokens,
       });
 
       const fixedCode = parseTestCode(response.content);

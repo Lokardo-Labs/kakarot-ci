@@ -62,7 +62,7 @@ describe('test-fix prompt', () => {
       maxAttempts: 3,
     });
 
-    expect(messages[1].content).toContain('Failing test code');
+    expect(messages[1].content).toMatch(/Complete test file|Failing test code/);
     expect(messages[1].content).toContain(testCode);
   });
 
