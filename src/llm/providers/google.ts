@@ -83,7 +83,7 @@ export class GoogleProvider extends BaseLLMProvider {
 
     debug(`Calling Google API with model: ${this.model}`);
 
-      const response = await fetch(`${this.baseUrl}/${this.model}:generateContent?key=${this.apiKey}`, {
+      const response = await fetch(`${this.baseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -104,6 +104,22 @@ export class GoogleProvider extends BaseLLMProvider {
         if (errorText) {
           errorMessage += ` - ${errorText.substring(0, 200)}`;
         }
+      }
+
+      // 404 means model not found - configuration error, don't retry
+      if (response.status === 404) {
+        const configError = new Error(
+          `${errorMessage}\n\nModel '${this.model}' not found. Please check the model name is correct. Available models: gemini-2.5-flash, gemini-2.5-pro, gemini-1.5-flash, gemini-1.5-pro.`
+        );
+        (configError as any).isNonRetryable = true;
+        throw configError;
+      }
+
+      // 400/401/403 are also configuration errors - don't retry
+      if (response.status === 400 || response.status === 401 || response.status === 403) {
+        const configError = new Error(errorMessage);
+        (configError as any).isNonRetryable = true;
+        throw configError;
       }
 
       if (response.status === 429) {
@@ -224,6 +240,15 @@ export class GoogleProvider extends BaseLLMProvider {
       }
 
       const content = data.candidates[0]?.content?.parts?.map((p) => p.text).join('\n') ?? '';
+      const finishReason = data.candidates[0]?.finishReason;
+      
+      // Log finish reason for debugging
+      debug(`Gemini finishReason: ${finishReason}, content length: ${content.length} chars`);
+      
+      // Normalize finish reason: Google uses 'STOP', 'MAX_TOKENS', 'SAFETY', etc.
+      const normalizedFinishReason = finishReason?.toLowerCase().replace('_', '-');
+      const truncated = finishReason === 'MAX_TOKENS' || finishReason === 'LENGTH';
+      
       const usage = data.usageMetadata
         ? {
             promptTokens: data.usageMetadata.promptTokenCount,
@@ -233,9 +258,15 @@ export class GoogleProvider extends BaseLLMProvider {
         : undefined;
 
       this.logUsage(usage, 'Google');
+      
+      if (truncated) {
+        warn(`Response truncated (finishReason: ${finishReason}). Output may be incomplete.`);
+      }
 
       return {
         content,
+        finishReason: normalizedFinishReason,
+        truncated,
         usage,
       };
   }

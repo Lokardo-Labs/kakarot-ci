@@ -17,8 +17,8 @@ describe('getTestFilePath', () => {
   it('should generate co-located test path', () => {
     const config = {
       testLocation: 'co-located' as const,
-      testDirectory: '__tests__',
-      testFilePattern: '*.test.ts',
+      testDirectory: '__tests__' as const,
+      testFilePattern: '*.test.ts' as const,
     };
 
     const result = getTestFilePath(baseTarget, config);
@@ -29,8 +29,8 @@ describe('getTestFilePath', () => {
   it('should generate separate test path', () => {
     const config = {
       testLocation: 'separate' as const,
-      testDirectory: '__tests__',
-      testFilePattern: '*.test.ts',
+      testDirectory: '__tests__' as const,
+      testFilePattern: '*.test.ts' as const,
     };
 
     const result = getTestFilePath(baseTarget, config);
@@ -46,8 +46,8 @@ describe('getTestFilePath', () => {
 
     const config = {
       testLocation: 'co-located' as const,
-      testDirectory: '__tests__',
-      testFilePattern: '*.test.ts',
+      testDirectory: '__tests__' as const,
+      testFilePattern: '*.test.ts' as const,
     };
 
     const result = getTestFilePath(target, config);
@@ -63,8 +63,8 @@ describe('getTestFilePath', () => {
 
     const config = {
       testLocation: 'co-located' as const,
-      testDirectory: '__tests__',
-      testFilePattern: '*.test.ts',
+      testDirectory: '__tests__' as const,
+      testFilePattern: '*.test.ts' as const,
     };
 
     const result = getTestFilePath(target, config);
@@ -75,8 +75,8 @@ describe('getTestFilePath', () => {
   it('should use custom test file pattern', () => {
     const config = {
       testLocation: 'separate' as const,
-      testDirectory: 'tests',
-      testFilePattern: '*.spec.ts',
+      testDirectory: 'tests' as const,
+      testFilePattern: '*.spec.ts' as const,
     };
 
     const result = getTestFilePath(baseTarget, config);
@@ -92,8 +92,8 @@ describe('getTestFilePath', () => {
 
     const config = {
       testLocation: 'co-located' as const,
-      testDirectory: '__tests__',
-      testFilePattern: '*.test.ts',
+      testDirectory: '__tests__' as const,
+      testFilePattern: '*.test.ts' as const,
     };
 
     const result = getTestFilePath(target, config);

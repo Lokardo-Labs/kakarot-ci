@@ -155,7 +155,7 @@ describe('KakarotConfigSchema', () => {
     expect(result.testDirectory).toBe('__tests__');
     expect(result.testFilePattern).toBe('*.test.ts');
     expect(result.includePatterns).toEqual(['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx']);
-    expect(result.maxTestsPerPR).toBe(50);
+    expect(result.maxTestsPerPR).toBe(-1); // -1 means unlimited
     expect(result.enableAutoCommit).toBe(true);
     expect(result.commitStrategy).toBe('direct');
     expect(result.enablePRComments).toBe(true);

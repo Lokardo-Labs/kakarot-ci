@@ -25,6 +25,7 @@ interface AnthropicResponse {
     type: string;
     text: string;
   }>;
+  stop_reason?: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use' | string;
   usage?: {
     input_tokens: number;
     output_tokens: number;
@@ -205,6 +206,13 @@ export class AnthropicProvider extends BaseLLMProvider {
       }
 
       const content = data.content.map((c) => c.text).join('\n');
+      const stopReason = data.stop_reason;
+      
+      // Anthropic uses 'end_turn', 'max_tokens', 'stop_sequence', 'tool_use'
+      // Normalize to common format
+      const finishReason = stopReason === 'end_turn' ? 'stop' : stopReason;
+      const truncated = stopReason === 'max_tokens';
+      
       const usage = data.usage
         ? {
             promptTokens: data.usage.input_tokens,
@@ -214,9 +222,15 @@ export class AnthropicProvider extends BaseLLMProvider {
         : undefined;
 
       this.logUsage(usage, 'Anthropic');
+      
+      if (truncated) {
+        warn(`Response truncated (stop_reason: ${stopReason}). Output may be incomplete.`);
+      }
 
       return {
         content,
+        finishReason,
+        truncated,
         usage,
       };
   }

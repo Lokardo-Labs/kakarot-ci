@@ -119,6 +119,8 @@ async function main(): Promise<void> {
     .option('--owner <string>', 'Repository owner')
     .option('--repo <string>', 'Repository name')
     .option('--token <string>', 'GitHub token (or use GITHUB_TOKEN env var)')
+    .option('--include <patterns...>', 'File patterns to include (overrides config)')
+    .option('--exclude <patterns...>', 'File patterns to exclude (overrides config)')
     .parse(process.argv);
 
   const options = program.opts();
@@ -149,7 +151,11 @@ async function main(): Promise<void> {
     info(`Starting Kakarot CI in ${mode} mode`);
 
     try {
-      const summary = await runLocal({ mode });
+      const summary = await runLocal({
+        mode,
+        includePatterns: options.include,
+        excludePatterns: options.exclude,
+      });
 
       // Exit with error code if there were failures
       if (summary.errors.length > 0 || summary.testsFailed > 0) {
