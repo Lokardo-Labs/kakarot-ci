@@ -88,7 +88,7 @@ Options:
 
 For full documentation, configuration options, GitHub Actions setup, and troubleshooting, visit:
 
-**[Full Documentation](https://kakarot-ci.dev/docs)**
+**[Full Documentation](https://www.kakarot.io/docs/getting-started)**
 
 ## Contributing
 
