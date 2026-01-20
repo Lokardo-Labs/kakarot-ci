@@ -11,7 +11,7 @@
 
 > **Beta Software**: This project is currently in beta. Expect occasional bugs and breaking changes. Please report issues and provide feedback.
 
-Kakarot CI automatically generates comprehensive unit tests using AI. It analyzes code, generates test files, runs them, and can automatically commit results back to your repository.
+Kakarot CI automatically generates comprehensive unit tests using AI. It analyzes code, generates test files, runs them, and can automatically commit results back to your repository. As AI improves so will Kakarot-ci!
 
 ## Supported Frameworks
 
