@@ -1,3 +1,10 @@
+# [0.12.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.11.1...v0.12.0) (2026-01-20)
+
+
+### Features
+
+* Beta release ([#46](https://github.com/Lokardo-Labs/kakarot-ci/issues/46)) ([589ac2f](https://github.com/Lokardo-Labs/kakarot-ci/commit/589ac2f9ab0fa3bd4f95c5ca915ec424a294e939))
+
 ## [0.11.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.11.0...v0.11.1) (2026-01-19)
 
 
