@@ -115,4 +115,8 @@ npm test
 
 ## License
 
-MIT
+Source-available. Free to use for testing your own software. See [LICENSE](LICENSE) for details.
+
+**You may**: Use this tool to generate tests for any software you build or sell.
+
+**You may not**: Redistribute, resell, or use this code to build competing products.
