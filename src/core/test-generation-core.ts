@@ -658,12 +658,11 @@ export async function generateTestsFromTargets(
     try {
       coverageReport = readCoverageReport(projectRoot, framework);
       if (coverageReport) {
-        info(`Coverage collected: ${coverageReport.total.lines.percentage.toFixed(1)}% lines`);
+        // Coverage info is now printed in the final summary block below
         
         // Calculate coverage delta if baseline exists
         if (baselineCoverage) {
           coverageDelta = calculateCoverageDelta(baselineCoverage, coverageReport);
-          info(`Coverage delta: +${coverageDelta.lines.toFixed(1)}% lines, +${coverageDelta.functions.toFixed(1)}% functions`);
         }
       } else {
         // Coverage was attempted but not generated - check if it's a setup issue
@@ -742,15 +741,60 @@ export async function generateTestsFromTargets(
     testResults: testResults,
   };
 
-  // Report completion - use appropriate log level based on failures
-  if (errors.length > 0) {
-    error(`❌ Completed with errors: ${testsGenerated} test(s) generated, ${finalTestsFailed} test(s) failed, ${errors.length} error(s)`);
-  } else if (finalTestsFailed > 0) {
-    error(`❌ Completed with failing tests: ${testsGenerated} test(s) generated, ${finalTestsFailed} test(s) failed`);
-    error(`The fix loop should have made all tests pass. This indicates tests could not be fixed.`);
+  // Print styled summary block
+  const testFileList = Array.from(finalTestFiles.entries());
+  const totalTests = testResults ? testResults.reduce((sum, r) => sum + r.total, 0) : 0;
+  const totalPassed = testResults ? testResults.reduce((sum, r) => sum + r.passed, 0) : 0;
+  const hasCoverage = coverageReport !== null;
+  const hasFailures = finalTestsFailed > 0 || errors.length > 0;
+
+  info('');
+  info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  if (hasFailures) {
+    error('  KAKAROT CI — COMPLETED WITH ISSUES');
   } else {
-    success(`✓ Completed successfully: ${testsGenerated} test(s) generated, all tests passing`);
+    success('  KAKAROT CI — COMPLETED SUCCESSFULLY');
   }
+  info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  info('');
+
+  // Test files
+  info(`  Test Files:    ${testFileList.length} written`);
+  for (const [filePath] of testFileList) {
+    info(`                 → ${filePath}`);
+  }
+
+  // Test counts
+  if (totalTests > 0) {
+    if (hasFailures) {
+      info(`  Tests:         ${totalPassed} passed, ${finalTestsFailed} failed (${totalTests} total)`);
+    } else {
+      success(`  Tests:         ${totalPassed} passed (${totalTests} total)`);
+    }
+  } else {
+    info(`  Targets:       ${testsGenerated} test suite(s) generated`);
+  }
+
+  // Coverage
+  if (hasCoverage) {
+    const cov = coverageReport!.total;
+    info(`  Coverage:      ${cov.lines.percentage.toFixed(1)}% lines | ${cov.statements.percentage.toFixed(1)}% statements | ${cov.functions.percentage.toFixed(1)}% functions | ${cov.branches.percentage.toFixed(1)}% branches`);
+    if (coverageDelta) {
+      const sign = (v: number) => v >= 0 ? `+${v.toFixed(1)}` : v.toFixed(1);
+      info(`  Delta:         ${sign(coverageDelta.lines)}% lines | ${sign(coverageDelta.functions)}% functions`);
+    }
+  }
+
+  // Errors
+  if (errors.length > 0) {
+    error(`  Errors:        ${errors.length}`);
+    for (const e of errors) {
+      error(`                 → ${e.target}: ${e.error}`);
+    }
+  }
+
+  info('');
+  info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
   return result;
 }
