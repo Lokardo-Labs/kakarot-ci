@@ -165,11 +165,9 @@ async function main(): Promise<void> {
 
       // Exit with error code if there were failures
       if (summary.errors.length > 0 || summary.testsFailed > 0) {
-        error(`Test generation completed with errors: ${summary.errors.length} error(s), ${summary.testsFailed} test(s) failed`);
         process.exit(1);
       }
 
-      info(`Test generation completed successfully: ${summary.testsGenerated} test(s) generated`);
       process.exit(0);
     } catch (err) {
       error(`Fatal error: ${err instanceof Error ? err.message : String(err)}`);
@@ -287,11 +285,9 @@ async function main(): Promise<void> {
 
     // Exit with error code if there were failures
     if (summary.errors.length > 0 || summary.testsFailed > 0) {
-      error(`Test generation completed with errors: ${summary.errors.length} error(s), ${summary.testsFailed} test(s) failed`);
       process.exit(1);
     }
 
-    info(`Test generation completed successfully: ${summary.testsGenerated} test(s) generated`);
     process.exit(0);
   } catch (err) {
     error(`Fatal error: ${err instanceof Error ? err.message : String(err)}`);
