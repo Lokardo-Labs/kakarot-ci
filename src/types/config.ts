@@ -57,6 +57,7 @@ export const KakarotConfigSchema = z.object({
   model: z.string().optional(), // Models change frequently, keep as string
   fixModel: z.string().optional(), // Optional separate model for fixing (stronger model recommended)
   maxTokens: z.number().int().min(1).max(100000).optional(),
+  contextLimit: z.number().int().min(1000).max(2000000).optional(),
   temperature: z.number().min(0).max(2).optional(),
   fixTemperature: z.number().min(0).max(2).optional(),
   maxFixAttempts: z.number().int().min(-1).default(5), // -1 means infinite attempts

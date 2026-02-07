@@ -38,13 +38,13 @@ export function createLLMProvider(
 function getDefaultModel(provider: 'openai' | 'anthropic' | 'google'): string {
   switch (provider) {
     case 'openai':
-      return 'gpt-4-turbo-preview';
+      return 'gpt-4o';
     case 'anthropic':
-      return 'claude-3-5-sonnet-20241022';
+      return 'claude-sonnet-4-20250514';
     case 'google':
-      return 'gemini-1.5-pro';
+      return 'gemini-2.5-pro';
     default:
-      return 'gpt-4-turbo-preview';
+      return 'gpt-4o';
   }
 }
 

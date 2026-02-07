@@ -24,7 +24,7 @@ describe('LLM factory', () => {
       apiKey: 'test-key',
     });
 
-    expect(OpenAIProvider).toHaveBeenCalledWith('test-key', 'gpt-4-turbo-preview', undefined);
+    expect(OpenAIProvider).toHaveBeenCalledWith('test-key', 'gpt-4o', undefined);
     expect(provider).toBe(mockProvider);
   });
 
@@ -37,7 +37,7 @@ describe('LLM factory', () => {
       provider: 'openai',
     });
 
-    expect(OpenAIProvider).toHaveBeenCalledWith('test-key', 'gpt-4-turbo-preview', undefined);
+    expect(OpenAIProvider).toHaveBeenCalledWith('test-key', 'gpt-4o', undefined);
     expect(provider).toBe(mockProvider);
   });
 
@@ -50,7 +50,7 @@ describe('LLM factory', () => {
       provider: 'anthropic',
     });
 
-    expect(AnthropicProvider).toHaveBeenCalledWith('test-key', 'claude-3-5-sonnet-20241022', undefined);
+    expect(AnthropicProvider).toHaveBeenCalledWith('test-key', 'claude-sonnet-4-20250514', undefined);
     expect(provider).toBe(mockProvider);
   });
 
@@ -63,7 +63,7 @@ describe('LLM factory', () => {
       provider: 'google',
     });
 
-    expect(GoogleProvider).toHaveBeenCalledWith('test-key', 'gemini-1.5-pro', undefined);
+    expect(GoogleProvider).toHaveBeenCalledWith('test-key', 'gemini-2.5-pro', undefined);
     expect(provider).toBe(mockProvider);
   });
 
@@ -90,7 +90,7 @@ describe('LLM factory', () => {
       maxTokens: 2000,
     });
 
-    expect(OpenAIProvider).toHaveBeenCalledWith('test-key', 'gpt-4-turbo-preview', { maxTokens: 2000 });
+    expect(OpenAIProvider).toHaveBeenCalledWith('test-key', 'gpt-4o', { maxTokens: 2000 });
   });
 
   it('should throw error for unknown provider', () => {

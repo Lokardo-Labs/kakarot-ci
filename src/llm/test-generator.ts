@@ -15,18 +15,17 @@ import { info, warn, error, debug } from '../utils/logger.js';
 export class TestGenerator {
   private provider: ReturnType<typeof createLLMProvider>;
   private fixProvider: ReturnType<typeof createLLMProvider> | null;
-  private config: Pick<KakarotConfig, 'maxFixAttempts' | 'temperature' | 'fixTemperature' | 'customPrompts' | 'model' | 'fixModel' | 'maxTokens'>;
+  private config: Pick<KakarotConfig, 'maxFixAttempts' | 'temperature' | 'fixTemperature' | 'customPrompts' | 'model' | 'fixModel' | 'maxTokens' | 'contextLimit'>;
   private modelContextLimit: number;
   private fixModelContextLimit: number;
 
   constructor(
     config: Pick<
       KakarotConfig,
-      'apiKey' | 'provider' | 'model' | 'fixModel' | 'maxTokens' | 'maxFixAttempts' | 'temperature' | 'fixTemperature' | 'customPrompts' | 'maxRetries'
+      'apiKey' | 'provider' | 'model' | 'fixModel' | 'maxTokens' | 'maxFixAttempts' | 'temperature' | 'fixTemperature' | 'customPrompts' | 'maxRetries' | 'contextLimit'
     >
   ) {
     this.provider = createLLMProvider(config);
-    // Use fixModel if provided, otherwise use the same provider
     if (config.fixModel) {
       debug(`Using separate fix model: ${config.fixModel} (generation model: ${config.model || 'default'})`);
       this.fixProvider = createLLMProvider({ ...config, model: config.fixModel });
@@ -42,48 +41,13 @@ export class TestGenerator {
       model: config.model,
       fixModel: config.fixModel,
       maxTokens: config.maxTokens,
+      contextLimit: config.contextLimit,
     };
-    // Get model context limit (default to 8K for gpt-4, 128K for newer models)
-    this.modelContextLimit = this.getModelContextLimit(config.model);
-    this.fixModelContextLimit = this.getModelContextLimit(config.fixModel || config.model);
-  }
 
-  /**
-   * Get context limit for a model (in tokens)
-   */
-  private getModelContextLimit(model?: string): number {
-    if (!model) return 8000; // Default to 8K
-    
-    // Common model context limits
-    if (model.includes('gpt-4-turbo') || model.includes('gpt-4o') || model.includes('gpt-4-1106')) {
-      return 128000;
-    }
-    if (model.includes('gpt-4-32k')) {
-      return 32768;
-    }
-    if (model.includes('gpt-4')) {
-      return 8192; // Standard gpt-4
-    }
-    if (model.includes('gpt-3.5-turbo-16k')) {
-      return 16384;
-    }
-    if (model.includes('gpt-3.5')) {
-      return 4096;
-    }
-    if (model.includes('claude-3-opus') || model.includes('claude-3-sonnet') || model.includes('claude-3-5')) {
-      return 200000;
-    }
-    if (model.includes('claude-3-haiku')) {
-      return 200000;
-    }
-    if (model.includes('claude-2')) {
-      return 100000;
-    }
-    if (model.includes('gemini')) {
-      return 1000000; // Gemini models have very large context (1M+ tokens)
-    }
-    
-    return 8000; // Default fallback
+    // Config override > model inference > 128K default
+    const defaultLimit = 128000;
+    this.modelContextLimit = config.contextLimit ?? defaultLimit;
+    this.fixModelContextLimit = config.contextLimit ?? defaultLimit;
   }
 
   /**

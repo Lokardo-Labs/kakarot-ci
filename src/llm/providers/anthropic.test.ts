@@ -11,12 +11,15 @@ vi.mock('./base.js', () => ({
       stopSequences: [],
     });
     protected logUsage = vi.fn();
+    protected parse429Error = vi.fn();
+    protected async withRetry<T>(fn: () => Promise<T>): Promise<T> { return fn(); }
   },
 }));
 
 vi.mock('../../utils/logger.js', () => ({
   debug: vi.fn(),
   error: vi.fn(),
+  warn: vi.fn(),
 }));
 
 global.fetch = vi.fn();
