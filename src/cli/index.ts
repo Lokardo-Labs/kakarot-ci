@@ -1,4 +1,6 @@
 import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { simpleGit } from 'simple-git';
 import gitUrlParse from 'git-url-parse';
 import { Command } from 'commander';
@@ -7,6 +9,10 @@ import { runLocal } from '../core/local-orchestrator.js';
 import { error, info, debug } from '../utils/logger.js';
 import { loadConfig } from '../utils/config-loader.js';
 import { findProjectRoot } from '../utils/config-loader.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf-8'));
+
 
 interface GitHubEvent {
   pull_request?: {
@@ -113,7 +119,7 @@ async function main(): Promise<void> {
   program
     .name('kakarot-ci')
     .description('AI-powered unit test generation for pull requests and local development')
-    .version('0.2.0')
+    .version(pkg.version)
     .option('--mode <mode>', 'Execution mode: pr (default), scaffold, or full', 'pr')
     .option('--pr <number>', 'Pull request number (required for pr mode)')
     .option('--owner <string>', 'Repository owner')

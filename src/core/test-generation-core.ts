@@ -387,8 +387,11 @@ export async function generateTestsFromTargets(
   let finalTestFiles = testFiles;
   let finalTestsFailed = testsFailed;
   let coverageEnabled = false;
-  let coverageAttempted = false; // Track if coverage was actually attempted (passed to runTests)
+  let coverageAttempted = false;
   let testResults: TestResult[] | undefined = undefined;
+
+  // Capture baseline coverage before running new tests so delta is meaningful
+  const baselineCoverage = config.enableCoverage ? readCoverageReport(projectRoot, framework) : null;
 
   // Ensure existing test files are included in testFiles map for fix loop
   // This allows the fix loop to run on existing test files even when all targets are skipped
@@ -591,10 +594,6 @@ export async function generateTestsFromTargets(
   let coverageDelta = null;
   if (coverageEnabled && coverageAttempted) {
     try {
-      // Get baseline coverage before running new tests (if coverage report exists)
-      const baselineCoverage = readCoverageReport(projectRoot, framework);
-
-      // Read coverage report after running tests
       coverageReport = readCoverageReport(projectRoot, framework);
       if (coverageReport) {
         info(`Coverage collected: ${coverageReport.total.lines.percentage.toFixed(1)}% lines`);
