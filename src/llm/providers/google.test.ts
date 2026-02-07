@@ -13,6 +13,8 @@ vi.mock('./base.js', () => ({
       stopSequences: [],
     });
     protected logUsage = vi.fn();
+    protected parse429Error = vi.fn();
+    protected async withRetry<T>(fn: () => Promise<T>): Promise<T> { return fn(); }
     constructor(apiKey: string, model: string) {
       this.apiKey = apiKey;
       this.model = model;
@@ -23,6 +25,7 @@ vi.mock('./base.js', () => ({
 vi.mock('../../utils/logger.js', () => ({
   debug: vi.fn(),
   error: vi.fn(),
+  warn: vi.fn(),
 }));
 
 global.fetch = vi.fn();
@@ -86,8 +89,9 @@ describe('GoogleProvider', () => {
 
     const callUrl = vi.mocked(fetch).mock.calls[0][0] as string;
     expect(callUrl).toContain('generateContent');
-    expect(callUrl).toContain('key=test-key');
+    expect(callUrl).not.toContain('key='); // API key should be in header, not URL
     const callOptions = vi.mocked(fetch).mock.calls[0][1];
+    expect((callOptions?.headers as Record<string, string>)['x-goog-api-key']).toBe('test-key');
     const body = JSON.parse(callOptions?.body as string);
     expect(body.systemInstruction.parts[0].text).toBe('system prompt');
     expect(body.contents).toHaveLength(1);
@@ -95,6 +99,18 @@ describe('GoogleProvider', () => {
   });
 
   it('should handle API errors', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      text: async () => 'Server error',
+    } as Response);
+
+    const messages: LLMMessage[] = [{ role: 'user', content: 'test' }];
+    await expect(provider.generate(messages)).rejects.toThrow('Google API error');
+  });
+
+  it('should throw NonRetryableError for 401', async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: false,
       status: 401,

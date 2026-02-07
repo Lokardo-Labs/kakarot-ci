@@ -20,13 +20,13 @@ Kakarot CI automatically generates comprehensive unit tests using AI. It analyze
 
 ## Supported Providers
 
-| Provider | Recommended Models | Notes |
-|----------|-------------------|-------|
+| Provider | Minimum Recommended | Notes |
+|----------|---------------------|-------|
 | **OpenAI** | `gpt-4o` | Best balance of speed, quality, and reliability. **Recommended for most users.** |
 | **Anthropic** | `claude-sonnet-4-20250514` | Excellent quality and instruction following. **Recommended for complex codebases.** |
 | **Google** | `gemini-2.5-pro` | Use Pro models only. Flash models may return incomplete responses. |
 
-**Tip**: For best results, use GPT-4o or Claude Sonnet. These models consistently produce high-quality tests with proper edge case coverage.
+**Note**: These are minimum recommended models. Newer and more capable models will generally produce better results. As models improve, so will Kakarot CI's output quality.
 
 ## Quick Start
 

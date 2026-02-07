@@ -4,6 +4,7 @@
 
 import type { KakarotConfig } from '../types/config.js';
 import type { TestTarget } from '../types/diff.js';
+import { RateLimitError } from '../types/errors.js';
 import { TestGenerator } from '../llm/test-generator.js';
 import { getTestFilePath } from '../utils/test-file-path.js';
 import { calculateImportPath } from '../utils/import-path-calculator.js';
@@ -300,18 +301,16 @@ export async function generateTestsFromTargets(
       const errorMessage = err instanceof Error ? err.message : String(err);
       
       // Check if this is a rate limit error with token information
-      const isRateLimitWithTokens = err && typeof err === 'object' && 
-        'isRateLimit' in err && (err as any).isRateLimit === true &&
-        'availableTokens' in err && (err as any).availableTokens !== null &&
-        'requestTokens' in err && (err as any).requestTokens !== null &&
-        'refillRate' in err && (err as any).refillRate !== null;
-      
-      if (isRateLimitWithTokens) {
-        // Store token information for capacity checking
+      if (
+        err instanceof RateLimitError &&
+        err.availableTokens !== null &&
+        err.requestTokens !== null &&
+        err.refillRate !== null
+      ) {
         lastRateLimitInfo = {
-          availableTokens: (err as any).availableTokens,
-          requestTokens: (err as any).requestTokens,
-          refillRate: (err as any).refillRate,
+          availableTokens: err.availableTokens,
+          requestTokens: err.requestTokens,
+          refillRate: err.refillRate,
           timestamp: Date.now(),
         };
         warn(`Rate limit hit: ${lastRateLimitInfo.availableTokens} tokens available, ${lastRateLimitInfo.requestTokens} requested. Refill rate: ${lastRateLimitInfo.refillRate} tokens/min.`);

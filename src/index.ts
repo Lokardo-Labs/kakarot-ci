@@ -2,6 +2,9 @@
 export type { KakarotConfig, PartialKakarotConfig } from './types/config.js';
 export { KakarotConfigSchema } from './types/config.js';
 
+// Error types
+export { KakarotError, RateLimitError, QuotaError, NonRetryableError } from './types/errors.js';
+
 // Config loader
 export { loadConfig } from './utils/config-loader.js';
 

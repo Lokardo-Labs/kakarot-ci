@@ -12,6 +12,7 @@ vi.mock('../utils/logger.js', () => ({
 describe('GitHubClient', () => {
   let client: GitHubClient;
   let mockOctokit: {
+    paginate: ReturnType<typeof vi.fn>;
     rest: {
       pulls: { get: ReturnType<typeof vi.fn>; listFiles: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> };
       repos: { getContent: ReturnType<typeof vi.fn>; getCommit: ReturnType<typeof vi.fn> };
@@ -31,6 +32,7 @@ describe('GitHubClient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockOctokit = {
+      paginate: vi.fn(),
       rest: {
         pulls: {
           get: vi.fn(),
@@ -77,16 +79,18 @@ describe('GitHubClient', () => {
   });
 
   it('should list pull request files', async () => {
-    mockOctokit.rest.pulls.listFiles.mockResolvedValue({
-      data: [
-        { filename: 'file.ts', status: 'added', additions: 10, deletions: 0, changes: 10, patch: 'diff' },
-      ],
-    } as never);
+    mockOctokit.paginate.mockResolvedValue([
+      { filename: 'file.ts', status: 'added', additions: 10, deletions: 0, changes: 10, patch: 'diff' },
+    ]);
 
     const files = await client.listPullRequestFiles(1);
 
     expect(files).toHaveLength(1);
     expect(files[0].filename).toBe('file.ts');
+    expect(mockOctokit.paginate).toHaveBeenCalledWith(
+      mockOctokit.rest.pulls.listFiles,
+      { owner: 'owner', repo: 'repo', pull_number: 1, per_page: 100 }
+    );
   });
 
   it('should get file contents', async () => {

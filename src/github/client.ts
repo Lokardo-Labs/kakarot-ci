@@ -86,12 +86,16 @@ export class GitHubClient {
   async listPullRequestFiles(prNumber: number): Promise<PullRequestFile[]> {
     return this.withRetry(async () => {
       debug(`Fetching files for PR #${prNumber}`);
-      const response = await this.octokit.rest.pulls.listFiles({
-        owner: this.owner,
-        repo: this.repo,
-        pull_number: prNumber,
-      });
-      return response.data.map(file => ({
+      const files = await this.octokit.paginate(
+        this.octokit.rest.pulls.listFiles,
+        {
+          owner: this.owner,
+          repo: this.repo,
+          pull_number: prNumber,
+          per_page: 100,
+        }
+      );
+      return files.map(file => ({
         filename: file.filename,
         status: file.status as PullRequestFile['status'],
         additions: file.additions,
