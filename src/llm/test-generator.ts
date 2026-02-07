@@ -123,7 +123,8 @@ export class TestGenerator {
 
     const isInfinite = this.config.maxFixAttempts === -1;
     const attemptLabel = isInfinite ? `${attempt}` : `${attempt}/${this.config.maxFixAttempts}`;
-    info(`Fixing test (attempt ${attemptLabel})`);
+    const fileLabel = context.testFilePath ? ` ${context.testFilePath}` : '';
+    info(`Fixing test${fileLabel} (attempt ${attemptLabel})`);
 
     try {
       // Use fix provider if available, otherwise use regular provider

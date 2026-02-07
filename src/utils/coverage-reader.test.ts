@@ -42,13 +42,16 @@ describe('coverage-reader', () => {
     expect(report?.total.lines.percentage).toBe(100);
   });
 
-  it('should read and parse Vitest coverage report', () => {
+  it('should read and parse Vitest V8 coverage report with shorthand keys', () => {
     const coverageData = {
-      'src/utils.ts': {
-        statements: { '0': 1, '1': 0 },
-        branches: { '0': 1 },
-        functions: { '0': 1 },
-        lines: { '0': 1 },
+      '/project/src/utils.ts': {
+        path: '/project/src/utils.ts',
+        s: { '0': 5, '1': 0, '2': 3 },
+        b: { '0': [2, 1], '1': [0, 3] },
+        f: { '0': 5, '1': 0 },
+        statementMap: {},
+        fnMap: {},
+        branchMap: {},
       },
     };
 
@@ -59,6 +62,15 @@ describe('coverage-reader', () => {
 
     expect(report).not.toBeNull();
     expect(report?.files).toHaveLength(1);
+    // s: 2 of 3 covered (5>0, 0=0, 3>0)
+    expect(report?.files[0].metrics.statements.total).toBe(3);
+    expect(report?.files[0].metrics.statements.covered).toBe(2);
+    // b: flattened [2,1,0,3] = 3 of 4 covered
+    expect(report?.files[0].metrics.branches.total).toBe(4);
+    expect(report?.files[0].metrics.branches.covered).toBe(3);
+    // f: 1 of 2 covered
+    expect(report?.files[0].metrics.functions.total).toBe(2);
+    expect(report?.files[0].metrics.functions.covered).toBe(1);
   });
 
   it('should return null if coverage file does not exist', () => {

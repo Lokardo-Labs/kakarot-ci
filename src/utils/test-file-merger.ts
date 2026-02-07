@@ -338,7 +338,6 @@ function mergeDescribeBlock(existingDescribe: string, newBody: string): string {
  */
 export function hasExistingTests(content: string, functionName: string, className?: string): boolean {
   const searchName = className || functionName;
-  // Simple check: look for describe blocks with the name
   const describeRegex = new RegExp(`describe\\s*\\(\\s*['"]${searchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`, 'i');
   return describeRegex.test(content);
 }

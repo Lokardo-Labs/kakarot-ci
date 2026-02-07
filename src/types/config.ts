@@ -60,7 +60,7 @@ export const KakarotConfigSchema = z.object({
   contextLimit: z.number().int().min(1000).max(2000000).optional(),
   temperature: z.number().min(0).max(2).optional(),
   fixTemperature: z.number().min(0).max(2).optional(),
-  maxFixAttempts: z.number().int().min(-1).default(5), // -1 means infinite attempts
+  maxFixAttempts: z.number().int().min(-1).default(8), // -1 means infinite attempts
 
   // Test Framework Settings
   framework: z.enum(TEST_FRAMEWORKS),
@@ -77,7 +77,7 @@ export const KakarotConfigSchema = z.object({
   // -1 means unlimited (process all targets)
   maxTestsPerPR: z.number().int().min(-1).default(-1),
   requestDelay: z.number().int().min(0).max(60000).default(0).optional(), // Delay between requests in ms
-  maxRetries: z.number().int().min(0).max(10).default(3).optional(), // Max retries for rate limits
+  maxRetries: z.number().int().min(0).max(10).default(5).optional(), // Max retries for rate limits
 
   // Git Integration
   enableAutoCommit: z.boolean().default(true),

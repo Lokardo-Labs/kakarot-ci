@@ -55,9 +55,36 @@ export function parseTestCode(response: string): string {
   // Final cleanup: remove any remaining markdown formatting
   code = code.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim();
 
+  // Strip LLM reasoning/analysis text that precedes actual code.
+  // If the response starts with prose (no import/describe/const/import), find where code begins.
+  if (code && !code.match(/^\s*(import\s|\/\/|\/\*|describe\s*\(|it\s*\(|test\s*\(|const\s|let\s|var\s|export\s|'use strict'|"use strict")/)) {
+    const codeStartPatterns = [
+      /^import\s/m,
+      /^\/\//m,
+      /^\/\*/m,
+      /^describe\s*\(/m,
+      /^const\s/m,
+      /^export\s/m,
+    ];
+
+    let earliest = -1;
+    for (const pattern of codeStartPatterns) {
+      const m = code.match(pattern);
+      if (m && m.index !== undefined) {
+        if (earliest === -1 || m.index < earliest) {
+          earliest = m.index;
+        }
+      }
+    }
+
+    if (earliest > 0) {
+      code = code.substring(earliest).trim();
+    }
+  }
+
   if (!code) {
     warn('Failed to extract test code from LLM response');
-    return response; // Return original if we can't parse
+    return response;
   }
 
   return code;

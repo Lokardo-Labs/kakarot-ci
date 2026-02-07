@@ -20,6 +20,23 @@ interface VitestTestResult {
   }>;
 }
 
+/**
+ * Find the Vitest JSON result line from stdout.
+ * Vitest 4 may output pool warnings before/after the JSON line,
+ * so we can't assume it's the last line.
+ */
+function findJsonResultLine(stdout: string): string | null {
+  const lines = stdout.trim().split('\n');
+  // Search backwards since JSON is typically near the end
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (line.startsWith('{') && line.includes('"numTotalTestSuites"')) {
+      return line;
+    }
+  }
+  return null;
+}
+
 export class VitestRunner implements TestRunner {
   async runTests(options: TestRunOptions): Promise<TestResult[]> {
     const { testFiles, packageManager, projectRoot, coverage } = options;
@@ -41,40 +58,44 @@ export class VitestRunner implements TestRunner {
         debug(`Vitest stderr: ${stderr}`);
       }
 
-      // Vitest JSON output is line-delimited, get the last line
-      const lines = stdout.trim().split('\n');
-      const jsonLine = lines[lines.length - 1];
-      
-      if (!jsonLine || !jsonLine.startsWith('{')) {
+      const jsonLine = findJsonResultLine(stdout);
+      if (!jsonLine) {
         throw new Error('No valid JSON output from Vitest');
       }
 
       const result = JSON.parse(jsonLine) as VitestTestResult;
 
-      return testFiles.map((testFile, index) => {
-        const testResult = result.testResults[index] || result.testResults[0];
+      return testFiles.map((testFile) => {
+        // Match by filename suffix since Vitest uses absolute paths in testResults
+        const testResult = result.testResults.find(r => r.name.endsWith(testFile)) || null;
         const failures: TestFailure[] = [];
+        let filePassed = 0;
+        let fileFailed = 0;
 
         if (testResult) {
           for (const assertion of testResult.assertionResults) {
-            if (assertion.status === 'failed' && assertion.failureMessages.length > 0) {
-              const failureMessage = assertion.failureMessages[0];
-              failures.push({
-                testName: assertion.title,
-                message: failureMessage,
-                stack: failureMessage,
-              });
+            if (assertion.status === 'failed') {
+              fileFailed++;
+              if (assertion.failureMessages.length > 0) {
+                failures.push({
+                  testName: assertion.title,
+                  message: assertion.failureMessages[0],
+                  stack: assertion.failureMessages[0],
+                });
+              }
+            } else {
+              filePassed++;
             }
           }
         }
 
         return {
-          success: result.numFailedTests === 0,
+          success: fileFailed === 0,
           testFile,
-          passed: result.numPassedTests,
-          failed: result.numFailedTests,
-          total: result.numTotalTests,
-          duration: 0, // Vitest JSON doesn't include duration per file
+          passed: filePassed,
+          failed: fileFailed,
+          total: filePassed + fileFailed,
+          duration: 0,
           failures,
         };
       });
@@ -82,32 +103,39 @@ export class VitestRunner implements TestRunner {
       // Vitest returns non-zero exit code on failures, but stdout may still contain JSON
       if (err && typeof err === 'object' && 'stdout' in err) {
         try {
-          const lines = (err.stdout as string).trim().split('\n');
-          const jsonLine = lines[lines.length - 1];
+          const jsonLine = findJsonResultLine(err.stdout as string);
           
-          if (jsonLine && jsonLine.startsWith('{')) {
+          if (jsonLine) {
             const result = JSON.parse(jsonLine) as VitestTestResult;
             return testFiles.map((testFile) => {
+              const testResult = result.testResults.find(r => r.name.endsWith(testFile)) || null;
               const failures: TestFailure[] = [];
-              
-              for (const testResult of result.testResults) {
+              let filePassed = 0;
+              let fileFailed = 0;
+
+              if (testResult) {
                 for (const assertion of testResult.assertionResults) {
-                  if (assertion.status === 'failed' && assertion.failureMessages.length > 0) {
-                    failures.push({
-                      testName: assertion.title,
-                      message: assertion.failureMessages[0],
-                      stack: assertion.failureMessages[0],
-                    });
+                  if (assertion.status === 'failed') {
+                    fileFailed++;
+                    if (assertion.failureMessages.length > 0) {
+                      failures.push({
+                        testName: assertion.title,
+                        message: assertion.failureMessages[0],
+                        stack: assertion.failureMessages[0],
+                      });
+                    }
+                  } else {
+                    filePassed++;
                   }
                 }
               }
 
               return {
-                success: result.numFailedTests === 0,
+                success: fileFailed === 0,
                 testFile,
-                passed: result.numPassedTests,
-                failed: result.numFailedTests,
-                total: result.numTotalTests,
+                passed: filePassed,
+                failed: fileFailed,
+                total: filePassed + fileFailed,
                 duration: 0,
                 failures,
               };

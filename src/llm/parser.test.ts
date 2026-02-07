@@ -48,6 +48,26 @@ describe('parseTestCode', () => {
     expect(result).toBe('');
   });
 
+  it('should strip LLM reasoning text before code', () => {
+    const response = `Looking at the errors, I can see two issues:\n\n1. The emit method only calls one handler.\n2. Something else.\n\nimport { EventBus } from '../src/services/EventBus';\nimport { describe, it, expect } from 'vitest';\n\ndescribe('EventBus', () => {\n  it('works', () => {});\n});`;
+    const result = parseTestCode(response);
+    expect(result).toMatch(/^import/);
+    expect(result).not.toContain('Looking at the errors');
+  });
+
+  it('should not strip valid code that starts with import', () => {
+    const response = `import { describe, it } from 'vitest';\ndescribe('test', () => {});`;
+    const result = parseTestCode(response);
+    expect(result).toMatch(/^import/);
+  });
+
+  it('should strip reasoning before code with no fences', () => {
+    const response = `Here is my analysis of the problem.\n\nThe function has a bug.\n\ndescribe('MyTest', () => {\n  it('works', () => {});\n});`;
+    const result = parseTestCode(response);
+    expect(result).toMatch(/^describe/);
+    expect(result).not.toContain('analysis');
+  });
+
   it('should handle JavaScript code blocks', () => {
     const response = '```javascript\ndescribe("test", () => {});\n```';
     const result = parseTestCode(response);
