@@ -1,3 +1,10 @@
+## [0.14.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.14.0...v0.14.1) (2026-02-07)
+
+
+### Bug Fixes
+
+* **jest:** Fixing jest issues with improper element and general improvements ([#50](https://github.com/Lokardo-Labs/kakarot-ci/issues/50)) ([49ec9a6](https://github.com/Lokardo-Labs/kakarot-ci/commit/49ec9a6df8e37aba7693b224c7ee14319479e84b))
+
 # [0.14.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.13.0...v0.14.0) (2026-02-07)
 
 
