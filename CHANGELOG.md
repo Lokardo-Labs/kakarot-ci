@@ -1,3 +1,10 @@
+# [0.13.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.12.0...v0.13.0) (2026-02-07)
+
+
+### Features
+
+* **tech debt:** Core improvements and tech debt.NO-TICKET ([#48](https://github.com/Lokardo-Labs/kakarot-ci/issues/48)) ([bcc8553](https://github.com/Lokardo-Labs/kakarot-ci/commit/bcc8553f1a5cbcf065555d3fb0f005afd043d4da))
+
 # [0.12.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.11.1...v0.12.0) (2026-01-20)
 
 
