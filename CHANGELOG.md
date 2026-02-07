@@ -1,3 +1,10 @@
+# [0.14.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.13.0...v0.14.0) (2026-02-07)
+
+
+### Features
+
+* **tech debt:** Adding in fixes for dupe bug, test generation and coverage ([#49](https://github.com/Lokardo-Labs/kakarot-ci/issues/49)) ([f5a55e3](https://github.com/Lokardo-Labs/kakarot-ci/commit/f5a55e3cd81942ae021cecb64abd78de3f465e18))
+
 # [0.13.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.12.0...v0.13.0) (2026-02-07)
 
 
