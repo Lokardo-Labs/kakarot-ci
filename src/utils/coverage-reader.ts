@@ -4,36 +4,48 @@ import type { CoverageReport, FileCoverage } from '../types/coverage.js';
 import { debug, warn } from './logger.js';
 
 /**
- * Jest coverage JSON structure
+ * Istanbul coverage JSON structure.
+ * V8/Istanbul uses shorthand keys: s (statements), b (branches), f (functions).
+ * Some reporters also include long-form keys.
  */
-interface JestCoverageData {
-  [filePath: string]: {
-    statements: { [key: string]: number };
-    branches: { [key: string]: number };
-    functions: { [key: string]: number };
-    lines: { [key: string]: number };
-    statementMap: Record<string, unknown>;
-    fnMap: Record<string, unknown>;
-    branchMap: Record<string, unknown>;
-  };
+interface IstanbulCoverageEntry {
+  path?: string;
+  // Shorthand keys (V8 / @vitest/coverage-v8)
+  s?: { [key: string]: number };
+  b?: { [key: string]: number | number[] };
+  f?: { [key: string]: number };
+  // Long-form keys (some Jest reporters)
+  statements?: { [key: string]: number };
+  branches?: { [key: string]: number | number[] };
+  functions?: { [key: string]: number };
+  lines?: { [key: string]: number };
+  statementMap?: Record<string, unknown>;
+  fnMap?: Record<string, unknown>;
+  branchMap?: Record<string, unknown>;
+}
+
+type CoverageData = { [filePath: string]: IstanbulCoverageEntry };
+
+/**
+ * Flatten branch counts. V8 coverage uses arrays for branch values (one per path),
+ * while some reporters use plain numbers.
+ */
+function flattenBranchCounts(branches: { [key: string]: number | number[] }): number[] {
+  const counts: number[] = [];
+  for (const val of Object.values(branches)) {
+    if (Array.isArray(val)) {
+      counts.push(...val);
+    } else {
+      counts.push(val);
+    }
+  }
+  return counts;
 }
 
 /**
- * Vitest coverage JSON structure (similar to Jest)
+ * Read and parse coverage report (handles both short and long-form Istanbul keys)
  */
-interface VitestCoverageData {
-  [filePath: string]: {
-    statements: { [key: string]: number };
-    branches: { [key: string]: number };
-    functions: { [key: string]: number };
-    lines: { [key: string]: number };
-  };
-}
-
-/**
- * Read and parse Jest coverage report
- */
-function parseJestCoverage(data: JestCoverageData): CoverageReport {
+function parseCoverage(data: CoverageData): CoverageReport {
   const files: FileCoverage[] = [];
   let totalStatements = 0;
   let coveredStatements = 0;
@@ -45,11 +57,16 @@ function parseJestCoverage(data: JestCoverageData): CoverageReport {
   let coveredLines = 0;
 
   for (const [filePath, coverage] of Object.entries(data)) {
-    // Calculate metrics for this file
-    const statementCounts = Object.values(coverage.statements);
-    const branchCounts = Object.values(coverage.branches);
-    const functionCounts = Object.values(coverage.functions);
-    const lineCounts = Object.values(coverage.lines);
+    // Support both shorthand (s/b/f) and long-form (statements/branches/functions) keys
+    const statementsObj = coverage.s || coverage.statements || {};
+    const branchesObj = coverage.b || coverage.branches || {};
+    const functionsObj = coverage.f || coverage.functions || {};
+    const linesObj = coverage.lines || coverage.s || {}; // lines falls back to statements
+
+    const statementCounts = Object.values(statementsObj) as number[];
+    const branchCounts = flattenBranchCounts(branchesObj);
+    const functionCounts = Object.values(functionsObj) as number[];
+    const lineCounts = Object.values(linesObj) as number[];
 
     const fileStatements = {
       total: statementCounts.length,
@@ -132,21 +149,12 @@ function parseJestCoverage(data: JestCoverageData): CoverageReport {
 }
 
 /**
- * Read and parse Vitest coverage report (similar format to Jest)
- */
-function parseVitestCoverage(data: VitestCoverageData): CoverageReport {
-  // Vitest uses the same structure as Jest
-  return parseJestCoverage(data as JestCoverageData);
-}
-
-/**
  * Read coverage report from Jest/Vitest JSON output
  */
 export function readCoverageReport(
   projectRoot: string,
-  framework: 'jest' | 'vitest'
+  _framework: 'jest' | 'vitest'
 ): CoverageReport | null {
-  // Jest and Vitest both output to coverage/coverage-final.json
   const coveragePath = join(projectRoot, 'coverage', 'coverage-final.json');
 
   if (!existsSync(coveragePath)) {
@@ -156,13 +164,8 @@ export function readCoverageReport(
 
   try {
     const content = readFileSync(coveragePath, 'utf-8');
-    const data = JSON.parse(content);
-
-    if (framework === 'jest') {
-      return parseJestCoverage(data as JestCoverageData);
-    } else {
-      return parseVitestCoverage(data as VitestCoverageData);
-    }
+    const data = JSON.parse(content) as CoverageData;
+    return parseCoverage(data);
   } catch (err) {
     warn(`Failed to read coverage report: ${err instanceof Error ? err.message : String(err)}`);
     return null;

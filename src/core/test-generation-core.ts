@@ -97,6 +97,63 @@ export interface TestGenerationResult {
 }
 
 /**
+ * Combine all class-method targets for the same class+file into a single target.
+ * Standalone functions pass through unchanged. This avoids N API calls for N methods
+ * of the same class - instead one call gets the full class context and generates all tests.
+ */
+function consolidateClassTargets(targets: TestTarget[]): TestTarget[] {
+  const classGroups = new Map<string, TestTarget[]>();
+  const standalone: TestTarget[] = [];
+
+  for (const target of targets) {
+    if (target.className && target.functionType === 'class-method') {
+      const key = `${target.filePath}::${target.className}`;
+      const group = classGroups.get(key) || [];
+      group.push(target);
+      classGroups.set(key, group);
+    } else {
+      standalone.push(target);
+    }
+  }
+
+  const consolidated: TestTarget[] = [...standalone];
+
+  for (const [, methods] of classGroups) {
+    const first = methods[0];
+    // Combine all method codes into one block the LLM sees as the full class
+    const combinedCode = methods.map(m => m.code).join('\n\n');
+    const combinedFunctionName = methods.map(m => m.functionName).join(', ');
+
+    // Use the widest line range across all methods
+    const startLine = Math.min(...methods.map(m => m.startLine));
+    const endLine = Math.max(...methods.map(m => m.endLine));
+
+    // Merge all changedRanges
+    const allRanges = methods.flatMap(m => m.changedRanges);
+
+    // Merge private properties
+    const allPrivate = [...new Set(methods.flatMap(m => m.classPrivateProperties || []))];
+
+    consolidated.push({
+      filePath: first.filePath,
+      functionName: combinedFunctionName,
+      functionType: 'class-method',
+      startLine,
+      endLine,
+      code: combinedCode,
+      context: first.context, // class context is shared
+      className: first.className,
+      isPrivate: false,
+      classPrivateProperties: allPrivate.length > 0 ? allPrivate : undefined,
+      changedRanges: allRanges,
+      existingTestFile: first.existingTestFile,
+    });
+  }
+
+  return consolidated;
+}
+
+/**
  * Core test generation logic - shared between PR and local modes
  */
 export async function generateTestsFromTargets(
@@ -123,11 +180,15 @@ export async function generateTestsFromTargets(
     warn(`Limited to ${limitedTargets.length} target(s) (maxTestsPerPR: ${config.maxTestsPerPR})`);
   }
 
-  info(`Processing ${limitedTargets.length} test target(s)${!isUnlimited && targets.length > limitedTargets.length ? ` (limited from ${targets.length} total)` : ''}`);
+  // Group class methods into single targets to avoid per-method API calls.
+  // All methods of the same class in the same file become one combined target.
+  const consolidatedTargets = consolidateClassTargets(limitedTargets);
+
+  info(`Processing ${consolidatedTargets.length} test target(s) (consolidated from ${limitedTargets.length})${!isUnlimited && targets.length > limitedTargets.length ? ` (limited from ${targets.length} total)` : ''}`);
   
   // Log which functions/classes will be tested
-  if (limitedTargets.length > 0) {
-    const targetNames = limitedTargets.map(t => t.className ? `${t.className}.${t.functionName}` : t.functionName).join(', ');
+  if (consolidatedTargets.length > 0) {
+    const targetNames = consolidatedTargets.map(t => t.className ? t.className : t.functionName).join(', ');
     info(`Test targets: ${targetNames}`);
   }
 
@@ -152,9 +213,10 @@ export async function generateTestsFromTargets(
     timestamp: number; // when this info was recorded
   } | null = null;
 
-  for (let i = 0; i < limitedTargets.length; i++) {
-    const target = limitedTargets[i];
-    progress(i + 1, limitedTargets.length, `Generating test for ${target.functionName}`);
+  for (let i = 0; i < consolidatedTargets.length; i++) {
+    const target = consolidatedTargets[i];
+    const targetLabel = target.className || target.functionName;
+    progress(i + 1, consolidatedTargets.length, `Generating test for ${targetLabel}`);
 
     // Check token capacity before starting new function generation
     // Estimate tokens needed for this request (~2000-4000 tokens for test generation)
@@ -217,7 +279,7 @@ export async function generateTestsFromTargets(
       // Check if this function/class already has tests
       if (existingContent) {
         if (hasExistingTests(existingContent, target.functionName, target.className)) {
-          info(`Skipping ${target.functionName} - tests already exist in ${testFilePath}`);
+          info(`Skipping ${targetLabel} - tests already exist in ${testFilePath}`);
           continue; // Skip this target
         }
       }
@@ -293,7 +355,7 @@ export async function generateTestsFromTargets(
       testFileToTargetsMap[testFilePath].push(target); // Store full target for fix loop
       testsGenerated++;
 
-      info(`✓ Generated test for ${target.functionName}`);
+      info(`✓ Generated test for ${targetLabel}`);
       
       // Clear rate limit info on successful generation (tokens were used successfully)
       lastRateLimitInfo = null;
@@ -357,7 +419,7 @@ export async function generateTestsFromTargets(
         throw new Error(`Configuration error: ${errorMessage}. Please fix your configuration and try again.`);
       }
       
-      error(`✗ Failed to generate test for ${target.functionName}: ${errorMessage}`);
+      error(`✗ Failed to generate test for ${targetLabel}: ${errorMessage}`);
       errors.push({
         target: `${target.filePath}:${target.functionName}`,
         error: errorMessage,
@@ -396,7 +458,7 @@ export async function generateTestsFromTargets(
   // Ensure existing test files are included in testFiles map for fix loop
   // This allows the fix loop to run on existing test files even when all targets are skipped
   const existingTestFiles = new Set<string>();
-  for (const target of limitedTargets) {
+  for (const target of consolidatedTargets) {
     const testFilePath = getTestFilePath(target, config);
     const fullTestPath = join(projectRoot, testFilePath);
     if (existsSync(fullTestPath) && !testFiles.has(testFilePath)) {
@@ -666,7 +728,7 @@ export async function generateTestsFromTargets(
 
   // Initialize result
   const result: TestGenerationResult = {
-    targetsProcessed: limitedTargets.length,
+    targetsProcessed: consolidatedTargets.length,
     testsGenerated,
     testsFailed: finalTestsFailed,
     testFiles: Array.from(finalTestFiles.entries()).map(([path, data]) => ({

@@ -20,13 +20,13 @@ Kakarot CI automatically generates comprehensive unit tests using AI. It analyze
 
 ## Supported Providers
 
-| Provider | Minimum Recommended | Notes |
-|----------|---------------------|-------|
-| **OpenAI** | `gpt-4o` | Best balance of speed, quality, and reliability. **Recommended for most users.** |
-| **Anthropic** | `claude-sonnet-4-20250514` | Excellent quality and instruction following. **Recommended for complex codebases.** |
-| **Google** | `gemini-2.5-pro` | Use Pro models only. Flash models may return incomplete responses. |
+| Provider | Minimum Recommended | Best | Notes |
+|----------|---------------------|------|-------|
+| **Anthropic** | `claude-sonnet-4-20250514` | `claude-opus-4-6` | **Opus 4.5/4.6 highly recommended.** Best test quality by far. Use Opus if you're hitting issues with other models. |
+| **OpenAI** | `gpt-4o` | — | Best balance of speed, quality, and reliability. **Recommended for most users.** |
+| **Google** | `gemini-2.5-pro` | — | Use Pro models only. Flash models may return incomplete responses. |
 
-**Note**: These are minimum recommended models. Newer and more capable models will generally produce better results. As models improve, so will Kakarot CI's output quality.
+**Note**: These are minimum recommended models. Newer and more capable models will generally produce better results. **Claude Opus 4.5 and 4.6 are the strongest models we've tested** — if you're experiencing quality issues, switching to Opus will almost always resolve them.
 
 ## Quick Start
 
