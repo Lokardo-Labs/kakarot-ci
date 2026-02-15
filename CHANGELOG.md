@@ -1,3 +1,24 @@
+## [0.14.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.14.0...v0.14.1) (2026-02-07)
+
+
+### Bug Fixes
+
+* **jest:** Fixing jest issues with improper element and general improvements ([#50](https://github.com/Lokardo-Labs/kakarot-ci/issues/50)) ([49ec9a6](https://github.com/Lokardo-Labs/kakarot-ci/commit/49ec9a6df8e37aba7693b224c7ee14319479e84b))
+
+# [0.14.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.13.0...v0.14.0) (2026-02-07)
+
+
+### Features
+
+* **tech debt:** Adding in fixes for dupe bug, test generation and coverage ([#49](https://github.com/Lokardo-Labs/kakarot-ci/issues/49)) ([f5a55e3](https://github.com/Lokardo-Labs/kakarot-ci/commit/f5a55e3cd81942ae021cecb64abd78de3f465e18))
+
+# [0.13.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.12.0...v0.13.0) (2026-02-07)
+
+
+### Features
+
+* **tech debt:** Core improvements and tech debt.NO-TICKET ([#48](https://github.com/Lokardo-Labs/kakarot-ci/issues/48)) ([bcc8553](https://github.com/Lokardo-Labs/kakarot-ci/commit/bcc8553f1a5cbcf065555d3fb0f005afd043d4da))
+
 # [0.12.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.11.1...v0.12.0) (2026-01-20)
 
 
