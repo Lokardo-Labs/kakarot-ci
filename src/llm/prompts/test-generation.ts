@@ -151,6 +151,20 @@ Requirements:
    - Test code must be type-safe: all variables, function parameters, and return types must be correctly typed
    - When using mock functions, ensure their types match the expected function signatures
    - For array operations with mixed types, explicitly type the array: const items: (Type1 | Type2)[] = [...]
+   - Avoid unnecessary complex type casts. Prefer simple patterns (e.g., setTimeout(() => resolve(undefined), 0)) over multi-layer 'as unknown as' casts
+19. Promise rejection safety:
+   - When testing functions that return promises expected to reject (e.g., timeouts, error cases), ALWAYS handle the rejection
+   - Use await expect(promise).rejects.toThrow() to assert rejections
+   - If a promise will reject but the test doesn't assert on it, attach .catch(() => {}) to prevent unhandled rejection crashes
+   - NEVER leave a promise that will reject floating without a catch handler — this crashes test runners
+   - Example (CORRECT): const promise = waitFor('test', 100).catch(() => {}); jest.advanceTimersByTime(100); await promise;
+   - Example (WRONG): waitFor('test', 100); jest.advanceTimersByTime(100); // unhandled rejection!
+20. Test coverage depth:
+   - Test initial state: verify the component/object state BEFORE any interactions (e.g., assert default values, initial render output, empty inputs)
+   - Include negative assertions: verify that side effects do NOT occur when conditions are not met (e.g., expect(mockFn).not.toHaveBeenCalled(), expect(element).not.toBeVisible())
+   - For comparison operators (<, <=, >, >=, ===), test values at the EXACT boundary to distinguish between operators. If code uses 'n <= 1', test n=1 (boundary hit) AND n=2 (boundary miss). If code uses 'index < 0', test index=0 (boundary miss) AND index=-1 (boundary hit).
+   - For React useEffect cleanup functions and timer-based code, include tests that verify cleanup behavior (timers cleared on unmount/re-render, subscriptions removed, pending operations cancelled)
+   - For wrap-around, cycling, or iteration-based behavior, trace through state changes step by step. If state starts at -1, account for the extra iteration to reach 0. Verify your loop count matches the expected final state.
 
 Output format:
 - Return ONLY the test code, no explanations or markdown code blocks
@@ -258,6 +272,32 @@ function buildUserPrompt(
     prompt += `- beforeEach: ${framework === 'jest' ? 'jest.useFakeTimers();' : 'vi.useFakeTimers();'}\n`;
     prompt += `- afterEach: ${framework === 'jest' ? 'jest.useRealTimers();' : 'vi.useRealTimers();'}\n`;
     prompt += `- Advance time: ${framework === 'jest' ? 'jest.advanceTimersByTime(ms);' : 'vi.advanceTimersByTime(ms);'}\n\n`;
+  }
+
+  // Detect React component (.tsx files with React imports)
+  const isReactComponent = target.filePath.endsWith('.tsx') || 
+                           target.code.includes('import React') ||
+                           target.code.includes('from \'react\'') ||
+                           target.code.includes('from "react"') ||
+                           (target.context && (
+                             target.context.includes('import React') ||
+                             target.context.includes('from \'react\'') ||
+                             target.context.includes('from "react"')
+                           ));
+
+  if (isReactComponent) {
+    prompt += `IMPORTANT: This is a React component. You MUST follow these React testing rules:\n`;
+    prompt += `- Use @testing-library/react for rendering and queries: import { render, screen, fireEvent, act } from '@testing-library/react'\n`;
+    prompt += `- ALWAYS import @testing-library/jest-dom at the TOP of the test file for DOM matchers: import '@testing-library/jest-dom'\n`;
+    prompt += `  This provides matchers like toBeInTheDocument(), toHaveAttribute(), toHaveTextContent(), toBeVisible(), etc.\n`;
+    prompt += `  WITHOUT this import, those matchers will cause TypeScript errors.\n`;
+    prompt += `- Render components using React.createElement() or JSX if the test file supports it\n`;
+    prompt += `- Use screen.getByTestId(), screen.getByRole(), screen.getByText() for element queries\n`;
+    prompt += `- Wrap state updates in act() when needed\n`;
+    prompt += `- For components with debounced/delayed behavior, use fake timers and act() together\n`;
+    prompt += `- Test initial render state BEFORE any interactions (default values, initial visibility, placeholder text)\n`;
+    prompt += `- Test user interactions: clicks, keyboard events, input changes\n`;
+    prompt += `- Test conditional rendering: loading states, empty states, error states\n\n`;
   }
 
   if (relatedFunctions && relatedFunctions.length > 0) {

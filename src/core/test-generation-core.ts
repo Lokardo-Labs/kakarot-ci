@@ -16,7 +16,7 @@ import type { CoverageDelta } from '../types/coverage.js';
 import { formatGeneratedCode, lintGeneratedCode } from '../utils/code-standards.js';
 import { findProjectRoot } from '../utils/config-loader.js';
 import { checkSyntaxCompleteness, validateTestFile, validateTypeScript } from '../utils/file-validator.js';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import { join } from 'path';
 import { info, error, warn, success, progress, debug } from '../utils/logger.js';
@@ -213,6 +213,9 @@ export async function generateTestsFromTargets(
     timestamp: number; // when this info was recorded
   } | null = null;
 
+  // Track consecutive truncation errors to abort early and save API costs
+  let consecutiveTruncations = 0;
+
   for (let i = 0; i < consolidatedTargets.length; i++) {
     const target = consolidatedTargets[i];
     const targetLabel = target.className || target.functionName;
@@ -319,6 +322,9 @@ export async function generateTestsFromTargets(
         formattedCode = await lintGeneratedCode(formattedCode, projectRoot);
       }
 
+      // Auto-inject @testing-library/jest-dom import if jest-dom matchers are used but import is missing
+      formattedCode = injectJestDomImportIfNeeded(formattedCode);
+
       // Track private properties for this test file
       if (target.classPrivateProperties && target.classPrivateProperties.length > 0) {
         const existing = privatePropertiesMap.get(testFilePath) || [];
@@ -359,6 +365,8 @@ export async function generateTestsFromTargets(
       
       // Clear rate limit info on successful generation (tokens were used successfully)
       lastRateLimitInfo = null;
+      // Reset truncation counter - a successful generation means not all targets are too large
+      consecutiveTruncations = 0;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       
@@ -388,10 +396,13 @@ export async function generateTestsFromTargets(
       // Syntax errors from LLM output are NOT configuration errors - they're just bad generations
       const isSyntaxError = errorMessage.includes('syntax error') || 
                            errorMessage.includes('Cannot merge') ||
-                           errorMessage.includes('Unclosed') ||
-                           errorMessage.includes('truncated');
+                           errorMessage.includes('Unclosed');
       
-      const isConfigurationError = !isSyntaxError && (
+      // Truncation is NOT a syntax error - it's a token limit issue that won't resolve by retrying
+      const isTruncationError = errorMessage.includes('truncated') || 
+                                errorMessage.includes('token limit');
+      
+      const isConfigurationError = !isSyntaxError && !isTruncationError && (
                                    errorMessage.includes('400') || 
                                    errorMessage.includes('401') ||
                                    errorMessage.includes('Unsupported parameter') ||
@@ -419,6 +430,27 @@ export async function generateTestsFromTargets(
         throw new Error(`Configuration error: ${errorMessage}. Please fix your configuration and try again.`);
       }
       
+      // Track consecutive truncation errors - abort after 2 to save API costs
+      if (isTruncationError) {
+        consecutiveTruncations++;
+        if (consecutiveTruncations === 1) {
+          warn(`Response truncated for ${targetLabel}. If this continues, generation will abort to save costs.`);
+          warn(`Hint: Increase maxTokens in kakarot.config.js (current limit may be too low for complex targets).`);
+        }
+        if (consecutiveTruncations >= 2) {
+          error(`✗ Token limit too low — ${consecutiveTruncations} consecutive targets truncated.`);
+          error(`Remaining targets will likely fail the same way. Aborting to save API costs.`);
+          error(`Fix: Add maxTokens: 16000 (or higher) to your kakarot.config.js`);
+          throw new Error(
+            `Token limit too low for remaining targets (${consecutiveTruncations} consecutive truncations). ` +
+            `Increase maxTokens in kakarot.config.js and try again.`
+          );
+        }
+      } else {
+        // Reset counter on non-truncation errors (a successful generation also resets below)
+        consecutiveTruncations = 0;
+      }
+      
       error(`✗ Failed to generate test for ${targetLabel}: ${errorMessage}`);
       errors.push({
         target: `${target.filePath}:${target.functionName}`,
@@ -427,8 +459,8 @@ export async function generateTestsFromTargets(
       testsFailed++;
       
       // If we've seen the same configuration error 2+ times, fail fast
-      // But NOT for syntax errors - those are expected when LLM generates bad code
-      if (errors.length >= 2 && !isSyntaxError) {
+      // But NOT for syntax or truncation errors
+      if (errors.length >= 2 && !isSyntaxError && !isTruncationError) {
         const recentErrors = errors.slice(-2).map(e => e.error);
         const allSameConfigError = recentErrors.every(e => 
           (e.includes('400') || e.includes('401') || e.includes('Unsupported parameter')) &&
@@ -647,6 +679,39 @@ export async function generateTestsFromTargets(
       } catch (err) {
         warn(`Failed to run tests or apply fixes: ${err instanceof Error ? err.message : String(err)}`);
         // Don't fail the whole operation, just report the error
+      }
+    }
+
+    // LLM review pass — run once per file on confirmed-working tests
+    // Catches strict-runtime issues (unhandled rejections, void-incompatible mocks, etc.)
+    // that pass Jest but crash Stryker or strict Node.js
+    if (finalTestFiles.size > 0 && mode !== 'scaffold') {
+      info('Running strict-runtime review on generated test files...');
+      for (const [testFile, fileData] of finalTestFiles.entries()) {
+        const targets = testFileToTargetsMap[testFile] || [];
+        const sourceCode = targets.length > 0 ? targets.map(t => t.code).join('\n\n') : '';
+        const sourceFilePath = targets.length > 0 ? targets[0].filePath : testFile;
+
+        try {
+          const reviewed = await testGenerator.reviewTestCode({
+            testCode: fileData.content,
+            sourceCode,
+            sourceFilePath,
+            framework,
+          });
+
+          if (reviewed !== fileData.content) {
+            fileData.content = reviewed;
+            // Write reviewed version to disk
+            const fullPath = join(projectRoot, testFile);
+            writeFileSync(fullPath, reviewed, 'utf-8');
+            info(`✓ Review applied to ${testFile}`);
+          } else {
+            info(`✓ Review clean: ${testFile} (no changes needed)`);
+          }
+        } catch (err) {
+          warn(`Review failed for ${testFile}: ${err instanceof Error ? err.message : String(err)} — keeping original`);
+        }
       }
     }
   }
@@ -1063,6 +1128,9 @@ async function runTestsAndFix(
           formattedCode = await lintGeneratedCode(formattedCode, projectRoot);
         }
 
+        // Auto-inject @testing-library/jest-dom import if jest-dom matchers are used but import is missing
+        formattedCode = injectJestDomImportIfNeeded(formattedCode);
+
         // Get private properties for this test file
         const targetsForFile = testFileToTargetsMap[testFile] || [];
         const privateProperties = targetsForFile
@@ -1395,4 +1463,58 @@ function calculateCoverageDelta(
     statements: current.total.statements.percentage - baseline.total.statements.percentage,
   };
 }
+
+/**
+ * jest-dom matchers that require `import '@testing-library/jest-dom'` at runtime.
+ * If any of these are used in test code without the import, inject it.
+ */
+const JEST_DOM_MATCHERS = [
+  'toBeInTheDocument',
+  'toHaveAttribute',
+  'toHaveTextContent',
+  'toBeVisible',
+  'toBeDisabled',
+  'toBeEnabled',
+  'toBeEmpty',
+  'toBeEmptyDOMElement',
+  'toBeInvalid',
+  'toBeRequired',
+  'toBeValid',
+  'toBeChecked',
+  'toHaveClass',
+  'toHaveFocus',
+  'toHaveFormValues',
+  'toHaveStyle',
+  'toHaveValue',
+  'toHaveDisplayValue',
+  'toContainElement',
+  'toContainHTML',
+  'toHaveDescription',
+  'toHaveErrorMessage',
+  'toHaveAccessibleDescription',
+  'toHaveAccessibleErrorMessage',
+  'toHaveAccessibleName',
+  'toHaveRole',
+  'toBePartiallyChecked',
+];
+
+const JEST_DOM_MATCHER_PATTERN = new RegExp(
+  `\\.(${JEST_DOM_MATCHERS.join('|')})\\s*\\(`,
+);
+
+function injectJestDomImportIfNeeded(code: string): string {
+  // Check if any jest-dom matchers are used
+  if (!JEST_DOM_MATCHER_PATTERN.test(code)) {
+    return code;
+  }
+
+  // Check if import already exists
+  if (code.includes("@testing-library/jest-dom")) {
+    return code;
+  }
+
+  // Inject at the very top, before all other imports
+  return `import '@testing-library/jest-dom';\n${code}`;
+}
+
 

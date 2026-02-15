@@ -8,6 +8,7 @@ import { createLLMProvider } from './factory.js';
 import { buildTestGenerationPrompt } from './prompts/test-generation.js';
 import { buildTestScaffoldPrompt } from './prompts/test-scaffold.js';
 import { buildTestFixPrompt } from './prompts/test-fix.js';
+import { buildTestReviewPrompt, type TestReviewContext } from './prompts/test-review.js';
 import { parseTestCode, validateTestCodeStructure, validateTestCodeForPrivateAccess } from './parser.js';
 import { optimizeFixContext } from '../utils/context-optimizer.js';
 import { info, warn, error, debug } from '../utils/logger.js';
@@ -277,6 +278,54 @@ export class TestGenerator {
     } catch (err) {
       error(`Failed to generate coverage summary: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
+    }
+  }
+
+  /**
+   * Post-generation LLM review pass — catches strict-runtime issues
+   * (unhandled rejections, void-incompatible mock returns, floating promises)
+   * that pass Jest but crash under Stryker or strict Node.js.
+   *
+   * Returns the corrected test code, or the original unchanged if clean.
+   */
+  async reviewTestCode(context: TestReviewContext): Promise<string> {
+    const { sourceFilePath } = context;
+    debug(`Running strict-runtime review for tests of ${sourceFilePath}`);
+
+    try {
+      const messages = buildTestReviewPrompt(context);
+
+      // Token budget: roughly same size as the input test code
+      const estimatedTokens = Math.max(4000, Math.ceil(context.testCode.length / 3));
+      const maxTokens = Math.min(estimatedTokens, 16000);
+
+      const response = await this.provider.generate(messages, {
+        temperature: 0.1,
+        maxTokens,
+      });
+
+      if (response.truncated) {
+        warn(`Review response truncated for ${sourceFilePath} — returning original test code unchanged`);
+        return context.testCode;
+      }
+
+      const reviewed = parseTestCode(response.content);
+
+      // Sanity check: reviewed code should have roughly the same test count
+      const originalTests = (context.testCode.match(/\bit\s*\(/g) || []).length;
+      const reviewedTests = (reviewed.match(/\bit\s*\(/g) || []).length;
+
+      if (reviewedTests < originalTests) {
+        warn(`Review removed tests (${originalTests} → ${reviewedTests}) for ${sourceFilePath} — returning original`);
+        return context.testCode;
+      }
+
+      debug(`Review complete for ${sourceFilePath} — ${reviewedTests} tests preserved`);
+      return reviewed;
+    } catch (err) {
+      // Review is best-effort — if it fails, return the original code
+      warn(`Review failed for ${sourceFilePath}: ${err instanceof Error ? err.message : String(err)} — returning original`);
+      return context.testCode;
     }
   }
 }
