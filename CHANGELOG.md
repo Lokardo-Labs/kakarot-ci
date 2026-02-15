@@ -1,3 +1,10 @@
+# [0.15.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.14.1...v0.15.0) (2026-02-15)
+
+
+### Features
+
+* **post cleanup:** Adding post run fix step for syntax or run time errors ([#51](https://github.com/Lokardo-Labs/kakarot-ci/issues/51)) ([0454638](https://github.com/Lokardo-Labs/kakarot-ci/commit/0454638efe166da10d3d4865558f2fac1894b06e))
+
 ## [0.14.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.14.0...v0.14.1) (2026-02-07)
 
 
