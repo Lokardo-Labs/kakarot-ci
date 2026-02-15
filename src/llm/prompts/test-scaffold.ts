@@ -138,6 +138,24 @@ function buildUserPrompt(
     prompt += `Context (surrounding code):\n\`\`\`typescript\n${target.context}\n\`\`\`\n\n`;
   }
 
+  // Detect React component (.tsx files with React imports)
+  const isReactComponent = target.filePath.endsWith('.tsx') || 
+                           target.code.includes('import React') ||
+                           target.code.includes('from \'react\'') ||
+                           target.code.includes('from "react"') ||
+                           (target.context && (
+                             target.context.includes('import React') ||
+                             target.context.includes('from \'react\'') ||
+                             target.context.includes('from "react"')
+                           ));
+
+  if (isReactComponent) {
+    prompt += `IMPORTANT: This is a React component. The scaffold MUST include:\n`;
+    prompt += `- import '@testing-library/jest-dom' at the top (for DOM matchers like toBeInTheDocument, toHaveAttribute)\n`;
+    prompt += `- import { render, screen, fireEvent, act } from '@testing-library/react'\n`;
+    prompt += `- TODO comments for: initial render state, user interactions, conditional rendering (loading/empty/error states)\n\n`;
+  }
+
   if (existingTestFile) {
     prompt += `Existing test file structure (follow this pattern):\n\`\`\`typescript\n${existingTestFile}\n\`\`\`\n\n`;
     prompt += `Note: Add new test scaffold to this file, maintaining the existing structure and style.\n\n`;
