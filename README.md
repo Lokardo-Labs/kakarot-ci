@@ -112,6 +112,26 @@ For full documentation, configuration options, GitHub Actions setup, and trouble
 
 **[Full Documentation](https://www.kakarot.io/docs/getting-started)**
 
+## Security & Privacy
+
+### Source Code Transmission
+
+Kakarot CI sends your source code to third-party LLM APIs (OpenAI, Anthropic, or Google) to generate tests. The function code under test, surrounding context, and generated test files are included in API requests. Review your LLM provider's data retention and privacy policies before use. Do not use Kakarot CI on codebases containing hardcoded secrets, credentials, or sensitive data that should not leave your environment.
+
+### API Key Handling
+
+Kakarot CI never stores, logs, or transmits your API keys anywhere other than directly to your chosen LLM provider. Keys are held in memory only for the duration of the process and are never persisted to disk, sent to Kakarot servers, or included in any telemetry.
+
+For production and CI environments, use the `KAKAROT_API_KEY` environment variable rather than the `--api-key` CLI flag. CLI arguments are visible in process listings (`ps aux`) on the host. The environment variable approach avoids this exposure.
+
+```bash
+# Preferred: env var (not visible in process list)
+KAKAROT_API_KEY=sk-ant-... npx kakarot-ci --mode full
+
+# Avoid in shared/production environments:
+npx kakarot-ci --mode full --api-key sk-ant-...
+```
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

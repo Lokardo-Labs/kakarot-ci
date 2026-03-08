@@ -1,9 +1,9 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { TestRunner, TestResult, TestRunOptions, TestFailure } from '../../types/test-runner.js';
 import { debug, error } from '../logger.js';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 interface JestTestResult {
   numPassedTests: number;
@@ -95,13 +95,16 @@ export class JestRunner implements TestRunner {
     
     debug(`Running Jest tests for ${testFiles.length} file(s)`);
 
-    // Build Jest command
-    const testFilesArg = testFiles.map(f => `"${f}"`).join(' ');
-    const coverageFlag = coverage ? '--coverage --coverageReporters=json' : '--no-coverage';
-    const cmd = `${packageManager} test -- --json ${coverageFlag} ${testFilesArg}`;
+    const args = ['test', '--', '--json'];
+    if (coverage) {
+      args.push('--coverage', '--coverageReporters=json');
+    } else {
+      args.push('--no-coverage');
+    }
+    args.push(...testFiles);
 
     try {
-      const { stdout, stderr } = await execAsync(cmd, {
+      const { stdout, stderr } = await execFileAsync(packageManager, args, {
         cwd: projectRoot,
         maxBuffer: 10 * 1024 * 1024, // 10MB
       });

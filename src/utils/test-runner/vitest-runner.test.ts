@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { VitestRunner } from './vitest-runner.js';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 
 vi.mock('child_process', () => ({
-  exec: vi.fn(),
+  execFile: vi.fn(),
 }));
 
 vi.mock('./logger.js', () => ({
@@ -38,9 +38,9 @@ describe('VitestRunner', () => {
       ],
     });
 
-    vi.mocked(exec).mockImplementation((_command, _options, callback?) => {
+    vi.mocked(execFile).mockImplementation((_command: any, _args: any, _options: any, callback?: any) => {
       if (callback) {
-        callback(null, { stdout: mockStdout, stderr: '' } as never, '');
+        callback(null, { stdout: mockStdout, stderr: '' });
       }
       return {} as never;
     });
@@ -69,9 +69,9 @@ describe('VitestRunner', () => {
     });
     const mockStdout = 'line 1\nline 2\n' + jsonOutput + '\n[vitest-pool]: some warning';
 
-    vi.mocked(exec).mockImplementation((_command, _options, callback?) => {
+    vi.mocked(execFile).mockImplementation((_command: any, _args: any, _options: any, callback?: any) => {
       if (callback) {
-        callback(null, { stdout: mockStdout, stderr: '' } as never, '');
+        callback(null, { stdout: mockStdout, stderr: '' });
       }
       return {} as never;
     });
@@ -107,12 +107,12 @@ describe('VitestRunner', () => {
       ],
     });
 
-    vi.mocked(exec).mockImplementation((_command, _options, callback?) => {
+    vi.mocked(execFile).mockImplementation((_command: any, _args: any, _options: any, callback?: any) => {
       if (callback) {
         const error = new Error('Command failed') as Error & { stdout: string; stderr: string };
         error.stdout = jsonOutput;
         error.stderr = '';
-        callback(error, { stdout: jsonOutput, stderr: '' } as never, '');
+        callback(error);
       }
       return {} as never;
     });
@@ -140,10 +140,10 @@ describe('VitestRunner', () => {
       testResults: [],
     });
 
-    vi.mocked(exec).mockImplementation((command, _options, callback?) => {
-      expect(command).toContain('--coverage');
+    vi.mocked(execFile).mockImplementation((_command: any, args: any, _options: any, callback?: any) => {
+      expect(args).toContain('--coverage');
       if (callback) {
-        callback(null, { stdout: jsonOutput, stderr: '' } as never, '');
+        callback(null, { stdout: jsonOutput, stderr: '' });
       }
       return {} as never;
     });
@@ -158,9 +158,9 @@ describe('VitestRunner', () => {
   });
 
   it('should throw error if no valid JSON in output', async () => {
-    vi.mocked(exec).mockImplementation((_command, _options, callback?) => {
+    vi.mocked(execFile).mockImplementation((_command: any, _args: any, _options: any, callback?: any) => {
       if (callback) {
-        callback(null, { stdout: 'no json here', stderr: '' } as never, '');
+        callback(null, { stdout: 'no json here', stderr: '' });
       }
       return {} as never;
     });
@@ -176,4 +176,3 @@ describe('VitestRunner', () => {
     ).rejects.toThrow('No valid JSON output from Vitest');
   });
 });
-
