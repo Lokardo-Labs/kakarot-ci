@@ -1,3 +1,10 @@
+# [0.16.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.15.0...v0.16.0) (2026-03-08)
+
+
+### Features
+
+* Ease of Use and Core improvements ([#53](https://github.com/Lokardo-Labs/kakarot-ci/issues/53)) ([132774f](https://github.com/Lokardo-Labs/kakarot-ci/commit/132774feaf44a0bd2bac12c024765c687406b309))
+
 # [0.15.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.14.1...v0.15.0) (2026-02-15)
 
 
