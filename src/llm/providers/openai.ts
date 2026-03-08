@@ -42,7 +42,7 @@ export class OpenAIProvider extends BaseLLMProvider {
         role: msg.role,
         content: msg.content,
       })),
-      temperature: mergedOptions.temperature,
+      ...(!isGPT5OrNewer && { temperature: mergedOptions.temperature }),
       ...(mergedOptions.stopSequences.length > 0 && { stop: mergedOptions.stopSequences }),
     };
     
@@ -76,6 +76,10 @@ export class OpenAIProvider extends BaseLLMProvider {
 
       if (response.status === 429) {
         this.parse429Error(errorText, errorMessage, response.headers.get('retry-after'), 'OpenAI');
+      }
+
+      if (response.status === 400 && this.learnMaxTokensCap(errorMessage)) {
+        return this._generate(messages, options);
       }
 
       error(errorMessage);

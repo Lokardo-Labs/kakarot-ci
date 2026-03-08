@@ -8,6 +8,7 @@ export abstract class BaseLLMProvider implements LLMProvider {
   protected defaultOptions: Required<LLMGenerateOptions>;
   protected maxRetries = 3;
   protected baseRetryDelay = 1000;
+  protected maxTokensCap: number | null = null;
 
   constructor(apiKey: string, model: string, defaultOptions?: Partial<LLMGenerateOptions>) {
     this.apiKey = apiKey;
@@ -22,11 +23,32 @@ export abstract class BaseLLMProvider implements LLMProvider {
   abstract generate(messages: LLMMessage[], options?: LLMGenerateOptions): Promise<LLMResponse>;
 
   protected mergeOptions(options?: LLMGenerateOptions): Required<LLMGenerateOptions> {
+    let maxTokens = options?.maxTokens ?? this.defaultOptions.maxTokens;
+    if (this.maxTokensCap) {
+      maxTokens = Math.min(maxTokens, this.maxTokensCap);
+    }
     return {
       temperature: options?.temperature ?? this.defaultOptions.temperature,
-      maxTokens: options?.maxTokens ?? this.defaultOptions.maxTokens,
+      maxTokens,
       stopSequences: options?.stopSequences ?? this.defaultOptions.stopSequences,
     };
+  }
+
+  /**
+   * Parse a "max tokens too large" error and learn the model's cap.
+   * Returns true if a cap was learned (caller should retry), false otherwise.
+   */
+  protected learnMaxTokensCap(errorMessage: string): boolean {
+    if (this.maxTokensCap) return false;
+    const match = errorMessage.match(/supports at most (\d+)/i)
+      ?? errorMessage.match(/maximum (?:of |is )?(\d+)/i)
+      ?? errorMessage.match(/at most (\d+) (?:completion )?tokens/i);
+    if (match) {
+      this.maxTokensCap = parseInt(match[1], 10);
+      warn(`Model ${this.model} max output tokens: ${this.maxTokensCap}. Retrying with capped value.`);
+      return true;
+    }
+    return false;
   }
 
   protected validateApiKey(): void {

@@ -61,6 +61,12 @@ const MAX_NETWORK_RETRIES_FINAL = 5;
 /** Maximum network retries on non-final attempts */
 const MAX_NETWORK_RETRIES_NORMAL = 3;
 
+/** Fraction of maxFixAttempts before LLM is told to simplify a stubborn test */
+const STUBBORN_SIMPLIFY_PERCENT = 0.5;
+
+/** Fraction of maxFixAttempts before a stubborn test is removed entirely */
+const STUBBORN_REMOVE_PERCENT = 0.75;
+
 /** Maximum backoff delay for network retries (10 seconds) */
 const MAX_NETWORK_BACKOFF_MS = 10000;
 
@@ -865,6 +871,37 @@ export async function generateTestsFromTargets(
 }
 
 /**
+ * Remove an it() block from test code by matching its name.
+ * Uses brace-depth tracking to find the complete block boundary.
+ */
+function removeTestByName(code: string, testName: string): string {
+  const escaped = testName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`(\\s*)it\\(\\s*['"\`]${escaped}['"\`]`);
+  const match = pattern.exec(code);
+  if (!match) return code;
+
+  const startIdx = match.index;
+  let depth = 0;
+  let foundOpen = false;
+  let endIdx = startIdx;
+
+  for (let i = startIdx; i < code.length; i++) {
+    const ch = code[i];
+    if (ch === '(') { depth++; foundOpen = true; }
+    if (ch === ')') { depth--; }
+    if (foundOpen && depth === 0) {
+      // consume trailing semicolon and newline
+      endIdx = i + 1;
+      if (code[endIdx] === ';') endIdx++;
+      while (code[endIdx] === '\n' || code[endIdx] === '\r') endIdx++;
+      break;
+    }
+  }
+
+  return code.slice(0, startIdx) + code.slice(endIdx);
+}
+
+/**
  * Run tests and fix failures in a loop
  */
 async function runTestsAndFix(
@@ -882,6 +919,7 @@ async function runTestsAndFix(
   
   let attempt = 0;
   const currentTestFiles = new Map(testFiles);
+  const stubbornTestCounts = new Map<string, number>();
 
   const isInfinite = maxFixAttempts === -1;
   while (isInfinite || attempt < maxFixAttempts) {
@@ -925,6 +963,25 @@ async function runTestsAndFix(
         }
       }
     }
+
+    // Track per-test failure counts for stubborn test escalation
+    const currentFailingNames = new Set<string>();
+    for (const { testFile, result } of failures) {
+      for (const f of result.failures) {
+        const key = `${testFile}::${f.testName}`;
+        currentFailingNames.add(key);
+        stubbornTestCounts.set(key, (stubbornTestCounts.get(key) ?? 0) + 1);
+      }
+    }
+    // Reset counts for tests that now pass
+    for (const [key] of stubbornTestCounts) {
+      if (!currentFailingNames.has(key)) {
+        stubbornTestCounts.delete(key);
+      }
+    }
+
+    const simplifyThreshold = Math.max(2, Math.ceil(maxFixAttempts * STUBBORN_SIMPLIFY_PERCENT));
+    const removeThreshold = Math.max(3, Math.ceil(maxFixAttempts * STUBBORN_REMOVE_PERCENT));
 
     // Fix each failing test file - collect all validated fixes first, then write all at once
     // This ensures all files are validated and written before tests run again
@@ -1020,6 +1077,34 @@ async function runTestsAndFix(
           ? ((fileDataForErrors as { _testRemovalRejected?: boolean })._testRemovalRejected)
           : false;
         
+        // --- Stubborn test escalation: removal at 6+ failures ---
+        const testsToRemove = result.failures
+          .filter(f => (stubbornTestCounts.get(`${testFile}::${f.testName}`) ?? 0) >= removeThreshold)
+          .map(f => f.testName);
+
+        if (testsToRemove.length > 0) {
+          let updatedContent = currentContent;
+          for (const name of testsToRemove) {
+            const before = updatedContent;
+            updatedContent = removeTestByName(updatedContent, name);
+            if (updatedContent !== before) {
+              warn(`Removed stubborn test "${name}" after ${removeThreshold} failed fix attempts`);
+              stubbornTestCounts.delete(`${testFile}::${name}`);
+            }
+          }
+          if (updatedContent !== currentContent) {
+            writeFileSync(testFile, updatedContent, 'utf-8');
+            currentTestFiles.set(testFile, { content: updatedContent, targets: currentFileData.targets });
+            fixedAny = true;
+            continue;
+          }
+        }
+
+        // --- Stubborn test escalation: simplification at 4+ failures ---
+        const stubbornTestNames = result.failures
+          .filter(f => (stubbornTestCounts.get(`${testFile}::${f.testName}`) ?? 0) >= simplifyThreshold)
+          .map(f => f.testName);
+
         // Retry network errors with exponential backoff (all attempts, not just final)
         const isFinalAttempt = attempt + 1 >= maxFixAttempts;
         let fixedResult;
@@ -1042,6 +1127,7 @@ async function runTestsAndFix(
           sourceFilePath,
               _validationErrors: validationErrors,
               _testRemovalRejected: testRemovalRejected,
+              stubbornTests: stubbornTestNames.length > 0 ? stubbornTestNames : undefined,
             });
             break; // Success, exit retry loop
           } catch (err) {
@@ -1516,5 +1602,4 @@ function injectJestDomImportIfNeeded(code: string): string {
   // Inject at the very top, before all other imports
   return `import '@testing-library/jest-dom';\n${code}`;
 }
-
 

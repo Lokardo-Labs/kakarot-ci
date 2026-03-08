@@ -125,6 +125,9 @@ async function main(): Promise<void> {
     .option('--owner <string>', 'Repository owner')
     .option('--repo <string>', 'Repository name')
     .option('--token <string>', 'GitHub token (or use GITHUB_TOKEN env var)')
+    .option('--api-key <string>', 'LLM API key (or use KAKAROT_API_KEY env var)')
+    .option('--provider <provider>', 'LLM provider: openai, anthropic, or google')
+    .option('--model <model>', 'LLM model name (e.g. gpt-5, claude-opus-4-6, gemini-3.1-pro-preview)')
     .option('--include <patterns...>', 'File patterns to include (overrides config)')
     .option('--exclude <patterns...>', 'File patterns to exclude (overrides config)')
     .parse(process.argv);
@@ -136,6 +139,23 @@ async function main(): Promise<void> {
   if (!['pr', 'scaffold', 'full'].includes(mode)) {
     error(`Invalid mode: ${mode}. Must be one of: pr, scaffold, full`);
     process.exit(1);
+  }
+
+  // Validate --provider if given
+  if (options.provider && !['openai', 'anthropic', 'google'].includes(options.provider)) {
+    error(`Invalid provider: ${options.provider}. Must be one of: openai, anthropic, google`);
+    process.exit(1);
+  }
+
+  // CLI flags override env vars (explicit flag = highest priority)
+  if (options.apiKey) {
+    process.env.KAKAROT_API_KEY = options.apiKey;
+  }
+  if (options.provider) {
+    process.env.PROVIDER = options.provider;
+  }
+  if (options.model) {
+    process.env.MODEL = options.model;
   }
 
   // Load config first to get defaults
