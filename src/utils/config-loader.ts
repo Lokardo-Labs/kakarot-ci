@@ -105,7 +105,7 @@ export async function loadConfig(): Promise<KakarotConfig> {
     }
     
     // Merge environment variables
-    if (!config.apiKey && process.env.KAKAROT_API_KEY) {
+    if (process.env.KAKAROT_API_KEY) {
       config.apiKey = process.env.KAKAROT_API_KEY;
     }
     
