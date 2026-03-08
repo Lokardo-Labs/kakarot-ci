@@ -1,3 +1,10 @@
+## [0.16.1](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.16.0...v0.16.1) (2026-03-08)
+
+
+### Bug Fixes
+
+* CLI api key flag has preference over env ([#54](https://github.com/Lokardo-Labs/kakarot-ci/issues/54)) ([4ad4ffa](https://github.com/Lokardo-Labs/kakarot-ci/commit/4ad4ffa7c072a5427988c15ed4a5a7e1db7dd052))
+
 # [0.16.0](https://github.com/Lokardo-Labs/kakarot-ci/compare/v0.15.0...v0.16.0) (2026-03-08)
 
 
