@@ -83,5 +83,6 @@ export interface TestFixContext {
   sourceFilePath?: string;
   _validationErrors?: string[]; // Syntax errors with line numbers for better LLM guidance
   _testRemovalRejected?: boolean; // Flag to indicate previous fix was rejected for removing too many tests
+  stubbornTests?: string[]; // Tests that have failed 4+ consecutive fix attempts and should be heavily simplified
 }
 

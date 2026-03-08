@@ -1,9 +1,9 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { TestRunner, TestResult, TestRunOptions, TestFailure } from '../../types/test-runner.js';
 import { debug, error } from '../logger.js';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 interface VitestTestResult {
   numPassedTests: number;
@@ -43,13 +43,14 @@ export class VitestRunner implements TestRunner {
     
     debug(`Running Vitest tests for ${testFiles.length} file(s)`);
 
-    // Build Vitest command
-    const testFilesArg = testFiles.map(f => `"${f}"`).join(' ');
-    const coverageFlag = coverage ? '--coverage' : '';
-    const cmd = `${packageManager} test -- --reporter=json ${coverageFlag} ${testFilesArg}`;
+    const args = ['test', '--', '--reporter=json'];
+    if (coverage) {
+      args.push('--coverage');
+    }
+    args.push(...testFiles);
 
     try {
-      const { stdout, stderr } = await execAsync(cmd, {
+      const { stdout, stderr } = await execFileAsync(packageManager, args, {
         cwd: projectRoot,
         maxBuffer: 10 * 1024 * 1024, // 10MB
       });

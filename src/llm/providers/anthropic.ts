@@ -86,6 +86,10 @@ export class AnthropicProvider extends BaseLLMProvider {
         this.parse429Error(errorText, errorMessage, response.headers.get('retry-after'), 'Anthropic');
       }
 
+      if (response.status === 400 && this.learnMaxTokensCap(errorMessage)) {
+        return this._generate(messages, options);
+      }
+
       error(errorMessage);
       throw new Error(errorMessage);
     }

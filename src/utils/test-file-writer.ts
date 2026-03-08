@@ -1,5 +1,5 @@
 import { writeFileSync, mkdirSync, existsSync, renameSync, unlinkSync } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, join, resolve } from 'path';
 import { debug, warn, error } from './logger.js';
 import { validateTestFile } from './file-validator.js';
 
@@ -14,8 +14,18 @@ export async function writeTestFiles(
   const writtenPaths: string[] = [];
   const failedPaths: string[] = [];
 
+  const resolvedRoot = resolve(projectRoot);
+
   for (const [relativePath, fileData] of testFiles.entries()) {
     const fullPath = join(projectRoot, relativePath);
+    const resolvedPath = resolve(fullPath);
+
+    if (!resolvedPath.startsWith(resolvedRoot)) {
+      error(`Path traversal detected, skipping: ${relativePath}`);
+      failedPaths.push(relativePath);
+      continue;
+    }
+
     const tempPath = fullPath + '.tmp';
     const dir = dirname(fullPath);
 

@@ -24,6 +24,7 @@ vi.mock('path', () => ({
     return parts.join('/') || '/';
   },
   join: (...args: string[]) => args.join('/'),
+  resolve: (...args: string[]) => args.join('/'),
 }));
 
 vi.mock('./logger.js', () => ({

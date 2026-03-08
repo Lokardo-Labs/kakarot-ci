@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { JestRunner } from './jest-runner.js';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 
 vi.mock('child_process', () => ({
-  exec: vi.fn(),
+  execFile: vi.fn(),
 }));
 
 vi.mock('./logger.js', () => ({
@@ -39,9 +39,9 @@ describe('JestRunner', () => {
     };
     const mockStdout = JSON.stringify(mockResult);
 
-    vi.mocked(exec).mockImplementation((_command, _options, callback?) => {
+    vi.mocked(execFile).mockImplementation((_command: any, _args: any, _options: any, callback?: any) => {
       if (callback) {
-        callback(null, { stdout: mockStdout, stderr: '' } as never, '');
+        callback(null, { stdout: mockStdout, stderr: '' });
       }
       return {} as never;
     });
@@ -83,12 +83,12 @@ describe('JestRunner', () => {
     };
     const mockStdout = JSON.stringify(mockResult);
 
-    vi.mocked(exec).mockImplementation((_command, _options, callback?) => {
+    vi.mocked(execFile).mockImplementation((_command: any, _args: any, _options: any, callback?: any) => {
       if (callback) {
         const error = new Error('Command failed') as Error & { stdout: string; stderr: string };
         error.stdout = mockStdout;
         error.stderr = '';
-        callback(error, { stdout: mockStdout, stderr: '' } as never, '');
+        callback(error);
       }
       return {} as never;
     });
@@ -127,12 +127,11 @@ describe('JestRunner', () => {
         },
       ],
     };
-    // Simulate npm script echo before JSON
     const mockStdout = `\n> test\n> jest --json --no-coverage "test1.test.ts"\n\n${JSON.stringify(mockResult)}`;
 
-    vi.mocked(exec).mockImplementation((_command, _options, callback?) => {
+    vi.mocked(execFile).mockImplementation((_command: any, _args: any, _options: any, callback?: any) => {
       if (callback) {
-        callback(null, { stdout: mockStdout, stderr: '' } as never, '');
+        callback(null, { stdout: mockStdout, stderr: '' });
       }
       return {} as never;
     });
@@ -170,12 +169,12 @@ describe('JestRunner', () => {
     };
     const mockStdout = `\n> test\n> jest --json --no-coverage "test1.test.ts"\n\n${JSON.stringify(mockResult)}`;
 
-    vi.mocked(exec).mockImplementation((_command, _options, callback?) => {
+    vi.mocked(execFile).mockImplementation((_command: any, _args: any, _options: any, callback?: any) => {
       if (callback) {
         const error = new Error('Command failed') as Error & { stdout: string; stderr: string };
         error.stdout = mockStdout;
         error.stderr = '';
-        callback(error, { stdout: mockStdout, stderr: '' } as never, '');
+        callback(error);
       }
       return {} as never;
     });
@@ -204,10 +203,10 @@ describe('JestRunner', () => {
       testResults: [],
     });
 
-    vi.mocked(exec).mockImplementation((command, _options, callback?) => {
-      expect(command).toContain('--coverage');
+    vi.mocked(execFile).mockImplementation((_command: any, args: any, _options: any, callback?: any) => {
+      expect(args).toContain('--coverage');
       if (callback) {
-        callback(null, { stdout: mockStdout, stderr: '' } as never, '');
+        callback(null, { stdout: mockStdout, stderr: '' });
       }
       return {} as never;
     });
@@ -248,12 +247,12 @@ describe('JestRunner', () => {
     };
     const mockStdout = JSON.stringify(mockResult);
 
-    vi.mocked(exec).mockImplementation((_command, _options, callback?) => {
+    vi.mocked(execFile).mockImplementation((_command: any, _args: any, _options: any, callback?: any) => {
       if (callback) {
         const error = new Error('Command failed') as Error & { stdout: string; stderr: string };
         error.stdout = mockStdout;
         error.stderr = '';
-        callback(error, { stdout: mockStdout, stderr: '' } as never, '');
+        callback(error);
       }
       return {} as never;
     });
@@ -278,4 +277,3 @@ describe('JestRunner', () => {
     expect(results[1].failures[0].message).toBe('Error: oops');
   });
 });
-

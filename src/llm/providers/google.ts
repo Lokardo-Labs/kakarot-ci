@@ -107,6 +107,10 @@ export class GoogleProvider extends BaseLLMProvider {
         );
       }
 
+      if (response.status === 400 && this.learnMaxTokensCap(errorMessage)) {
+        return this._generate(messages, options);
+      }
+
       if (response.status === 400 || response.status === 401 || response.status === 403) {
         throw new NonRetryableError(errorMessage);
       }
